@@ -3,6 +3,8 @@
 #include <iostream>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
+
+#define _USE_MATH_DEFINES
 #include <cmath>
 
 #define IRIS_MISS_MESSAGE "Invalid iris layer provided."
@@ -12,6 +14,13 @@
 namespace eye {
     float __blend(float a, float b, float x) {
         return ((b - a) * x) + a;
+    }
+    float __scale(float x, float originLow, float originHigh, float targetLow, float targetHigh) {
+        float originRange = originHigh - originLow;
+        float targetRange = targetHigh - targetLow;
+        
+        float preTarget = (x - originLow) / originRange;
+        return (x * targetRange) + targetLow;
     }
     void IrisContour::draw(cv::Mat& img, const cv::Mat& occupancyGrid, float x, float y, 
     float intensity) {
@@ -27,6 +36,17 @@ namespace eye {
 
         /* 1 */
 
+        // Conver the x and y coordinates into screen space coordinates
+        size_t sx, sy;
+        if (img.rows > img.cols) {
+            sx = __scale(x, -1, 1, 0, img.cols);
+            sy = __scale(y, -1, 1, 0, img.cols);
+        }
+        else {
+            sx = __scale(x, -1, 1, 0, img.rows);
+            sy = __scale(y, -1, 1, 0, img.rows);
+        }
+
         // The maximum physical eye size in pixels
         float maxOccupancy = occupancyGrid.at<float>(y, x);
 
@@ -37,7 +57,7 @@ namespace eye {
                 this->_sizeRange[(int)IRIS_OUTER], intensity);
         }
         else {
-            size = this->_sizeFunction(intensity);
+            size = this->_sizeFunction(intensity).continuous;
         }
 
         // The current amplitude based off of the intensity provided
@@ -47,14 +67,14 @@ namespace eye {
                 this->_amplitudeRange[(int)IRIS_OUTER], intensity);
         }
         else {
-            amplitude = this->_amplitudeFunction(intensity);
+            amplitude = this->_amplitudeFunction(intensity).continuous;
         }
 
         // Account for extraneous functional implementations
         float phaseShift = this->_phaseFunction == nullptr ? this->_phaseShift 
-            : this->_phaseFunction(intensity);
+            : this->_phaseFunction(intensity).continuous;
         RGB color = this->_colorFunction == nullptr ? this->_color
-            : this->_colorFunction(intensity);
+            : this->_colorFunction(intensity).color;
         
         
         // The actual occupancy of the layer
@@ -90,5 +110,40 @@ namespace eye {
         cv::Scalar polygonColor = cv::Scalar(color.B, color.G, color.R);
         // Draw polygon
         cv::fillPoly(img, &this->__vertexBuffer, &this->_vertices, 1, polygonColor);
+    }
+
+    void Iris::draw(cv::Mat& img, const cv::Mat& occupancyGrid, float x, float y, float intensity) {
+        /**
+         * To transfer the structure of the iris down to the lower layer contours,
+         * a couple of steps must be done. The innermost contour of the iris will
+         * actually be used as a helper to figure out how to mask the outer
+         * contour.
+         */
+        cv::Mat baseMask = cv::Mat(img.rows, img.cols, cv::CV_8UC3);
+        baseMask.setTo(0);
+        cv::Mat floatMask, floatImg, floatIris;
+
+        // Draw the inner chunk of the iris on the inner contour/mask
+        this->_inner->setColor(this->__MASK_COLOR);
+        this->_inner->draw(baseMask, occupancyGrid, x, y, intensity);
+
+        // Convert the masks to something more scalable
+        baseMask.convertTo(floatMask, cv::CV_32FC3, (float)1/255);
+        img.convertTo(floatImg, cv::CV_32FC3);
+
+        // Draw the outer chunk of the iris normally
+        this->_inner->draw(img, occupancyGrid, x, y, intensity);
+        img.convertTo(floatIris, cv::CV_32FC3);
+
+        // Mask inside of pupil
+        floatImg = floatImg.mul(floatMask);
+
+        // Mask outside of pupil
+        floatMask = 1.0 - floatMask;
+        floatIris = floatIris.mul(floatMask);
+
+        // Combine and save
+        floatImg += floatIris;
+        floatImg.convertTo(img, img.type());
     }
 }
