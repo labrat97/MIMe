@@ -119,9 +119,11 @@ namespace eye {
          * actually be used as a helper to figure out how to mask the outer
          * contour.
          */
-        cv::Mat baseMask = cv::Mat(img.rows, img.cols, cv::CV_8UC3);
+
+        // Running data
+        cv::Mat baseMask , floatMask, floatImg, floatIris;
+        baseMask = cv::Mat(img.rows, img.cols, cv::CV_8UC3);
         baseMask.setTo(0);
-        cv::Mat floatMask, floatImg, floatIris;
 
         // Draw the inner chunk of the iris on the inner contour/mask
         this->_inner->setColor(this->__MASK_COLOR);
