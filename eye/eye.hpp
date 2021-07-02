@@ -144,7 +144,7 @@ namespace eye {
          * Passing the getting/setting functionality to the outer iris contour.
          */
         void setColor(RGB color) { _outer->setColor(color); }
-        RGB getColor(RGB color) { return _outer-getColor(); }
+        RGB getColor() { return _outer->getColor(); }
 
         // TODO: Functional functionality passing to the iris contours
     };
