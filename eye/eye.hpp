@@ -31,6 +31,18 @@ namespace eye {
         RGB _color = {255, 255, 255};
         uint16_t _harmonic;
 
+        /**
+         * Functional control of the iris parameters. The single float input
+         * on every function below is an intensity in the range of [0.0, 1.0],
+         * the output should be the same. The only case this is different is the
+         * RGB output of the color function, in which case it's impossible to mess
+         * up the output format of the struct.
+         */
+        float (*_amplitudeFunction)(float) = nullptr;
+        float (*_sizeFunction)(float) = nullptr;
+        float (*_phaseFunction)(float) = nullptr;
+        RGB (*_colorFunction)(float) = nullptr;
+
         const uint16_t _vertices;
 
     private:
@@ -104,19 +116,37 @@ namespace eye {
         void draw(cv::Mat& img, const cv::Mat& occupancyGrid, float x, float y, float intensity);
     };
 
-    class IrisLayer {
+    class Iris {
         IrisContour* _outer;
         IrisContour* _inner;
 
     private:
-        cv::Mat* mask = nullptr;
+        cv::Mat* __mask = nullptr;
 
     public:
-        IrisLayer(uint16_t layerVertices=512) {
-            _outer = new IrisContour(9, layerVertices);
-            
-            _inner = new IrisContour(7, layerVertices);
+        Iris(uint16_t outerHarmonic=9, uint16_t innerHarmonic=7, uint16_t layerVertices=512) {
+            _outer = new IrisContour(outerHarmonic, layerVertices);
+            _outer->setPeakToPeakRange(0.2, 0.0);
+            _outer->setSizeRange(1.0, 0.9);
+
+            _inner = new IrisContour(innerHarmonic, layerVertices);
+            _inner->setPeakToPeakRange(0.3, 0.1);
+            _inner->setSizeRange(0.3, 0.5);
         }
+        ~Iris() {
+            delete _outer;
+            delete _inner;
+
+            delete __mask;
+        }
+
+        /**
+         * Passing the getting/setting functionality to the outer iris contour.
+         */
+        void setColor(RGB color) { _outer->setColor(color); }
+        RGB getColor(RGB color) { return _outer-getColor(); }
+
+        // TODO: Functional functionality passing to the iris contours
     };
 }
 

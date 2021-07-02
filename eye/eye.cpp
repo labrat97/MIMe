@@ -31,12 +31,31 @@ namespace eye {
         float maxOccupancy = occupancyGrid.at<float>(y, x);
 
         // The current size based off of the intensity provided
-        float size = __blend(this->_sizeRange[(int)IRIS_INNER], 
-            this->_sizeRange[(int)IRIS_OUTER], intensity);
+        float size;
+        if (this->_sizeFunction == nullptr) {
+            size = __blend(this->_sizeRange[(int)IRIS_INNER], 
+                this->_sizeRange[(int)IRIS_OUTER], intensity);
+        }
+        else {
+            size = this->_sizeFunction(intensity);
+        }
 
         // The current amplitude based off of the intensity provided
-        float amplitude = __blend(this->_amplitudeRange[(int)IRIS_INNER],
-            this->_amplitudeRange[(int)IRIS_OUTER], intensity);
+        float amplitude;
+        if (this->_amplitudeFunction == nullptr) {
+            amplitude = __blend(this->_amplitudeRange[(int)IRIS_INNER],
+                this->_amplitudeRange[(int)IRIS_OUTER], intensity);
+        }
+        else {
+            amplitude = this->_amplitudeFunction(intensity);
+        }
+
+        // Account for extraneous functional implementations
+        float phaseShift = this->_phaseFunction == nullptr ? this->_phaseShift 
+            : this->_phaseFunction(intensity);
+        RGB color = this->_colorFunction == nullptr ? this->_color
+            : this->_colorFunction(intensity);
+        
         
         // The actual occupancy of the layer
         float occupancy = maxOccupancy * size;
@@ -54,7 +73,7 @@ namespace eye {
             magnitude = occupancy;
 
             // Subtract the sinusoidal waveform from the eye, peak at 0.0
-            magnitude -= amplitude * (sin(omega * (x + this->_phaseShift)) - 1.0);
+            magnitude -= amplitude * (sin(omega * (x + phaseShift)) - 1.0);
 
             /* 3 */
 
@@ -62,12 +81,13 @@ namespace eye {
             cv::Point2i* target = &this->__vertexBuffer[i];
             target->x = magnitude * cos(2.0 * M_PI * ((double)i / this->_vertices));
             target->y = magnitude * sin(2.0 * M_PI * ((double)i / this->_vertices));
+            *target += cv::Point2i(x, y);
         }
 
         /* 4 */
 
         // Assume BGR colorspace
-        cv::Scalar polygonColor = cv::Scalar(this->_color.B, this->_color.G, this->_color.R);
+        cv::Scalar polygonColor = cv::Scalar(color.B, color.G, color.R);
         // Draw polygon
         cv::fillPoly(img, &this->__vertexBuffer, &this->_vertices, 1, polygonColor);
     }
