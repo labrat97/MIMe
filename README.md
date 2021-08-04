@@ -98,8 +98,6 @@ a monetary reason for this at the moment. I just want to make a friend, not an a
 advertise.
 
 </br>
-</br>
-</br>
 
 ```
 I hope you decide to follow along and help make this friend with me. Thank you.
