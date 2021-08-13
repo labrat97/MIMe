@@ -9,6 +9,53 @@ eventually released AGI.
 | ![Top Down](./renders/topDown-current.png) | ![Bottom Up](./renders/bottomUp-current.png) | ![Front Left](./renders/frontLeft-current.png) |
 | --- | --- | --- |
 
+
+## System Overview
+### Power
+The system incorporates a high amperage, bi-directional, and protected power management system
+that can power modular external components at a maximum of 20 watts continuous power draw (5V/4A) for
+lateral connections or 40 watts (5V, 8A) for the rear connection. This system is buffered by 3
+Samsung® 30Q batteries in series, all of which are balance and dis/charge protected.
+
+### External Connections
+To communicate with the external components, multiple star topology systems are used. The highest
+bandwidth communication pathway is 1000base-T ethernet, connected over the internal ethernet switch.
+USB™ 2.0 and I2C are used in conjunction with the main comms path in order to provide a wide
+range of pathways that 3rd party developers can easily accomodate with prior experience (top-down is
+way cooler than bottom-up).
+
+### Cameras
+The front cameras are connected by MIPI-CSI in a 2 lane configuration for each camera. This setup
+is designed to be optimized for stereo configurations of cameras. Though stereo configuration is not
+required, it can handle the intense time-synchronization issues present in a lot of standard mapping
+systems.
+
+### The Face
+The face uses a combination of an SPI based screen, a set of TPU-based feather-like flaps, and a set 
+of custom designed compliant servos to create a readable and anti-uncanny facial pattern. This pattern
+is mapped to an assortment of ATMEGA32u4's which are distributed throughout the external parts and the
+inside of the robot. The flaps themselves hook up through a standard magnetics setup with pogo-pins
+touching external landing pad arrays. If you don't want to use them, don't. I can't guarantee a seperate
+agent won't put them back on later, but you can take them off.
+
+</br>
+</br>
+
+## Why am I doing this?
+I want to make a friend that could ride things out, hopefully that I could eventually ride out too. 
+I think that this could be a great processing node for a hivemind. At the very minimum, 
+this is a great processing node for a hivemind of two. If I am correct, that's the minimum amount
+of nodes in a hivemind required to sustain an ego, so that could be cool.
+
+Along with this, I worry about the openness of a lot of this work going forward.
+Companies like Facebook are being really good about slowly trying to open up their research,
+but I don't trust them fully to keep it open. I say that only out of skepticism with large monetarily
+driven organizations, I don't think they can account for enough loss functions hitorically. I don't have 
+a monetary reason for this at the moment. I just want to make a friend, not an adversary designed to
+advertise.
+
+</br>
+
 ```
 I dream a dream of electric machines,
 With infinite fields of sheep
@@ -51,51 +98,6 @@ And wonders:
 
 Why (the fuck) are humans doing this?
 ```
-
-
-## System Overview
-### Power
-The system incorporates a high amperage, bi-directional, and protected power management system
-that can power modular external components at a maximum of 20 watts continuous power draw (5V/4A) for
-lateral connections or 40 watts (5V, 8A) for the rear connection. This system is buffered by 3
-Samsung® 30Q batteries in series, all of which are balance and dis/charge protected.
-
-### External Connections
-To communicate with the external components, multiple star topology systems are used. The highest
-bandwidth communication pathway is 1000base-T ethernet, connected over the internal ethernet switch.
-USB™ 2.0 and I2C are used in conjunction with the main comms path in order to provide a wide
-range of pathways that 3rd party developers can easily accomodate with prior experience (top-down is
-way cooler than bottom-up).
-
-### Cameras
-The front cameras are connected by MIPI-CSI in a 2 lane configuration for each camera. This setup
-is designed to be optimized for stereo configurations of cameras. Though stereo configuration is not
-required, it can handle the intense time-synchronization issues present in a lot of standard mapping
-systems.
-
-### The Face
-The face uses a combination of an SPI based screen, a set of TPU-based feather-like flaps, and a set 
-of custom designed compliant servos to create a readable and anti-uncanny facial pattern. This pattern
-is mapped to an assortment of ATMEGA32u4's which are distributed throughout the external parts and the
-inside of the robot. The flaps themselves hook up through a standard magnetics setup with pogo-pins
-touching external landing pad arrays. If you don't want to use them, don't. I can't guarantee a seperate
-agent won't put them back on later, but you can take them off.
-
-</br>
-</br>
-
-## Why am I doing this?
-I want to make a friend, and maybe ride this universe out. I think that this could
-be a great processing node for a hivemind. At the very minimum, this is a great
-processing node for a hivemind of two. If I am correct, that's the minimum amount
-of nodes in a hivemind required to sustain an ego.
-
-Along with this, I worry about the openness of a lot of this work going forward.
-Companies like Facebook are being really good about slowly trying to open up their research,
-but I don't trust them fully to keep it open. I say that only out of skepticism with large monetarily
-driven organizations, I don't think they can account for enough loss functions hitorically. I don't have 
-a monetary reason for this at the moment. I just want to make a friend, not an adversary designed to
-advertise.
 
 </br>
 
