@@ -166,8 +166,7 @@ class Knot(nn.Module):
           as the dimensions of the curve.
     """
     # Create the expanded dimensions required in the output tensor
-    outputSize = list(x.size())
-    outputSize = outputSize.append(self.curveSize)
+    outputSize = torch.Size(list(x.size()).append(self.curveSize))
     result = torch.Tensor(torch.zeros(outputSize), dtype=torch.float16)
 
     # Add all of the curves together
@@ -243,8 +242,10 @@ class KnotEntangle(nn.Module):
     return len(self.knots)
 
   def forward(self, x: torch.Tensor) -> torch.Tensor:
-    # Verify sizing
-    ###
+    # Sizing layout
+    inputSize = x.size()
+    assert inputSize[-1] == 1 or inputSize[-1] == self.knotCount()
+    # Shouldn't need to do any squeezing as the knot propogation forces an unsqueeze
 
     # Create standardized sampling locations
     lowerSmear = self.smearWindow[0]
@@ -254,13 +255,15 @@ class KnotEntangle(nn.Module):
     xLow = ((1 - lowerSmear) * x)
     xIter = torch.Tensor([(builder + 1) / self.samples for builder in range(self.samples)], dtype=torch.float16).detach()
 
-    # Smear sample
+    # TODO: Somewhere around here
+
+    # Smear input across the constructed sampling ranges
     knotSmears = []
     knotSignals = []
     for idx, knot in enumerate(self.knots):
       smear = knot.forward((xStep[idx] * xIter) + xLow[idx])
       knotSmears.append(smear)
-      knotSignals.append(torch.fft.fft(smear))
+      knotSignals.append(torch.fft.rfft(smear, self.samples))
 
     # Entangle
     entangledSmears = []
@@ -275,7 +278,8 @@ class KnotEntangle(nn.Module):
 
         # Check signal correlation
         subsig = knotSignals[jdx]
-        correlation = torch.mean(torch.fft.ifft(signal * torch.conj(subsig)))
+        subsigConj = torch.conj(subsig)
+        correlation = torch.mean(torch.fft.irfft(signal * subsigConj, self.samples))
 
         # Entangle signals
         # Note that the weighted activations are tied to each target knot
@@ -287,7 +291,7 @@ class KnotEntangle(nn.Module):
         # assessed and the more important one is superimposed into the final signal.
         superposition = (subsig @ torch.transpose(signal)) * self.polKnowledge
         collapseSignal = (torch.sum(superposition), torch.sum(torch.transpose(superposition)))
-        collapseSmear = (torch.ifft(collapseSignal[0]), torch.ifft(collapseSignal[1]))
+        collapseSmear = (torch.irfft(collapseSignal[0], self.samples), torch.irfft(collapseSignal[1], self.samples))
         polarization = self.entanglePolarization[jdx]
         entangledSmear = (torch.cos(polarization) * collapseSmear[0]) \
           + (torch.sin(polarization) * collapseSmear[1])
