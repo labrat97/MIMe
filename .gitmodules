@@ -1,3 +1,0 @@
-[submodule "perception/tvm"]
-	path = perception/tvm
-	url = https://github.com/dmlc/tvm
