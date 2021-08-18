@@ -1,0 +1,17 @@
+services:
+  capture:
+    build:
+      dockerfile: Dockerfile
+      target: mime-capture
+      image: mime-capture:latest
+    runtime: nvidia
+    volumes: 
+      - /tmp/argus_socket:/tmp/argus_socket
+  
+  eye:
+    build:
+      dockerfile: Dockerfile
+      target: mime-face
+      image: mime-face:latest
+    runtime: nvidia
+    

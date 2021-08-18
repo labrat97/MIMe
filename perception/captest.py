@@ -1,6 +1,6 @@
 import cv2 as cv
 import numpy as np
-import capture
+import syscamera as camera
 import vpi
 import gc
 WINDOW_NAME = 'Disparity'
@@ -10,7 +10,7 @@ captures = []
 retVal = True
 
 for idx in range(2):
-    config = capture.configurationString(idx, 1920, 1080, 30)
+    config = camera.configurationString(idx, 1920, 1080, 30)
     captures.append(cv.VideoCapture(config, cv.CAP_GSTREAMER))
 
 cv.startWindowThread()
