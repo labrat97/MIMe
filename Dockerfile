@@ -145,7 +145,10 @@ RUN mkdir -p ${ROS_ROOT}/src && \
 # https://github.com/ros2/rclcpp/issues/1335
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 # Finish up installation
-RUN sed -i 's/ros_env_setup="\/opt\/ros\/$ROS_DISTRO\/setup.bash"/ros_env_setup="${ROS_ROOT}\/install\/setup.bash"/g'
+COPY ./scripts/ros_entrypoint.sh /ros_entrypoint.sh
+RUN sed -i 's/ros_env_setup="\/opt\/ros\/$ROS_DISTRO\/setup.bash"/ros_env_setup="${ROS_ROOT}\/install\/setup.bash"/g' \
+    /ros_entrypoint.sh && \
+    cat /ros_entrypoint.sh
 RUN echo 'source ${ROS_ROOT}/install/setup.bash' >> /root/.bashrc
 ### END SELECTIVE COPY ###
 
@@ -162,5 +165,4 @@ ENTRYPOINT python3 ${PROGHOME}/${DEFAULTSCRIPT}
 # Captures data from physical and virtual sensors
 FROM mime-base AS mime-capture
 COPY perception/. ${PROGHOME}/
-RUN apt-get install -y -qq libnvvpi1
-
+RUN apt-get update -qq && apt-get install -y -qq libnvvpi1
