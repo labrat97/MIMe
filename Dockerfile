@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1
 
-
 # Sets up the working base for all subcontainers
 FROM nvcr.io/nvidia/l4t-ml:r32.6.1-py3 AS mime-base
 ENV PROGHOME=/mime
-ENV DEFAULTSCRIPT=dockerrun.py
+ENV DEFAULTSCRIPT=init.sh
+
+
 
 # Bring current
 RUN apt-get update -qq
@@ -21,7 +22,7 @@ RUN echo "deb https://repo.download.nvidia.com/jetson/t194 r32.6 main" >> ${NVRE
 # Add ROS2 Foxy support
 ### BEGIN SELECTIVE COPY ###
 # Basically directly copied from: https://github.com/dusty-nv/jetson-containers/blob/master/Dockerfile.ros.foxy
-ARG ROS_PKG=ros_base
+ENV ROS_PKG=ros_base
 ENV ROS_DISTRO=foxy
 ENV ROS_ROOT=/opt/ros/${ROS_DISTRO}
 ENV DEBIAN_FRONTEND=noninteractive
@@ -158,10 +159,16 @@ WORKDIR ${PROGHOME}
 ENTRYPOINT python3 ${PROGHOME}/${DEFAULTSCRIPT}
 
 
+
 ### LATER BUILD STAGES AFTER THIS POINT ###
 
 
-# Later stage build targets
+
+# Enables terminal access
+FROM mime-base as mime-terminal
+COPY terminal/. ${PROGHOME}/
+
+
 # Captures data from physical and virtual sensors
 FROM mime-base AS mime-capture
 COPY perception/. ${PROGHOME}/

@@ -1,4 +1,11 @@
 services:
+  terminal:
+    build:
+      dockerfile: Dockerfile
+      target: mime-terminal
+      image: mime-terminal:latest
+    runtime: nvidia
+
   capture:
     build:
       dockerfile: Dockerfile
