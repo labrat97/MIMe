@@ -9,7 +9,7 @@ ENV DEFAULTSCRIPT=init.sh
 
 # Bring current
 RUN apt-get update -qq
-RUN apt-get dist-upgrade -y -qq
+RUN apt-get install -y -qq && apt-get dist-upgrade -y -qq
 
 # Add VPI Support
 RUN apt-key adv --fetch-key http://repo.download.nvidia.com/jetson/jetson-ota-public.asc
@@ -173,3 +173,10 @@ COPY terminal/. ${PROGHOME}/
 FROM mime-base AS mime-capture
 COPY perception/. ${PROGHOME}/
 RUN apt-get update -qq && apt-get install -y -qq libnvvpi1
+
+
+# Displays facial features
+FROM mime-base as mime-face
+COPY face/. ${PROGHOME}/
+RUN apt-get update -qq && apt-get install -y -qq \
+    golang-1.13 golang-1.13-doc golang-1.13-go golang-1.13-src
