@@ -178,7 +178,7 @@ COPY brain/. ${PROGHOME}
 # Captures data from physical and virtual sensors
 FROM mime-base AS mime-capture
 COPY perception/. ${PROGHOME}/
-RUN apt-get update -qq && apt-get install -y -qq libnvvpi1
+RUN apt-get update -qq && apt-get install -y -qq libnvvpi1 alsa-base alsa-utils
 
 
 # Displays facial features
@@ -186,13 +186,6 @@ FROM mime-base as mime-face
 COPY face/. ${PROGHOME}/
 RUN apt-get update -qq && apt-get install -y -qq \
     golang-1.13 golang-1.13-doc golang-1.13-go golang-1.13-src
-
-
-# Deal with audio IO
-FROM mime-base AS mime-audio
-COPY audio/. ${PROGHOME}/
-RUN apt-get update -qq && apt-get install -y -qq \
-    alsa-base alsa-utils
 
 
 # Wrangle MIMe attachments

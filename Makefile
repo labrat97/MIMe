@@ -15,7 +15,7 @@ endif
 
 ### Build section ###
 
-ALL=mime-base mime-brain mime-terminal mime-capture mime-face mime-audio mime-limbs
+ALL=mime-base mime-brain mime-terminal mime-capture mime-face mime-limbs
 all: $(ALL)
 
 mime-base: $(DEPS)
@@ -31,9 +31,6 @@ mime-capture: ./perception $(DEPS) | mime-base
 	docker build --target="$@" --tag="$@:$(TAG_NAME)" --network="$(SLAVE_NETWORK)" .
 
 mime-face: ./face $(DEPS) | mime-base
-	docker build --target="$@" --tag="$@:$(TAG_NAME)" --network="$(SLAVE_NETWORK)" .
-
-mime-audio: ./audio $(DEPS) | mime-base
 	docker build --target="$@" --tag="$@:$(TAG_NAME)" --network="$(SLAVE_NETWORK)" .
 
 mime-limbs: ./limbs $(DEPS) | mime-base
