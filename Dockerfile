@@ -170,6 +170,11 @@ FROM mime-base as mime-terminal
 COPY terminal/. ${PROGHOME}/
 
 
+# Run main ROS processes and JAMES functionality
+FROM mime-base AS mime-brain
+COPY brain/. ${PROGHOME}
+
+
 # Captures data from physical and virtual sensors
 FROM mime-base AS mime-capture
 COPY perception/. ${PROGHOME}/
@@ -191,5 +196,5 @@ RUN apt-get update -qq && apt-get install -y -qq \
 
 
 # Wrangle MIMe attachments
-FROM mime-base AS mime-mod
-COPY mods/. ${PROGHOME}/
+FROM mime-base AS mime-limbs
+COPY limbs/. ${PROGHOME}/
