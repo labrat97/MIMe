@@ -1,24 +1,43 @@
+version: "3.5"
 services:
   terminal:
     build:
-      dockerfile: Dockerfile
+      context: .
       target: mime-terminal
-      image: mime-terminal:latest
     runtime: nvidia
 
+  brain:
+    build:
+      context: .
+      target: mime-brain
+    runtime: nvidia
+    
   capture:
     build:
-      dockerfile: Dockerfile
+      context: .
       target: mime-capture
-      image: mime-capture:latest
     runtime: nvidia
     volumes: 
       - /tmp/argus_socket:/tmp/argus_socket
   
-  eye:
+  face:
     build:
-      dockerfile: Dockerfile
+      context: .
       target: mime-face
-      image: mime-face:latest
     runtime: nvidia
+  
+  audio:
+    build:
+      context: .
+      target: mime-audio
+    runtime: nvidia
+    volumes:
+      - /dev/snd:/dev/snd
+  
+  mods:
+    build:
+      context: .
+      target: mime-mods
+    runtime: nvidia`
+    
     
