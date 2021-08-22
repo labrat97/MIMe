@@ -156,6 +156,7 @@ RUN echo 'source ${ROS_ROOT}/install/setup.bash' >> /root/.bashrc
 
 # Finish up and turn into a command
 WORKDIR ${PROGHOME}
+COPY config/. ${PROGHOME}/config/
 ENTRYPOINT python3 ${PROGHOME}/${DEFAULTSCRIPT}
 
 
@@ -180,3 +181,15 @@ FROM mime-base as mime-face
 COPY face/. ${PROGHOME}/
 RUN apt-get update -qq && apt-get install -y -qq \
     golang-1.13 golang-1.13-doc golang-1.13-go golang-1.13-src
+
+
+# Deal with audio IO
+FROM mime-base AS mime-audio
+COPY audio/. ${PROGHOME}/
+RUN apt-get update -qq && apt-get install -y -qq \
+    alsa-base alsa-utils
+
+
+# Wrangle MIMe attachments
+FROM mime-base AS mime-mod
+COPY mods/. ${PROGHOME}/
