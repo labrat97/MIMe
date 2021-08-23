@@ -15,8 +15,12 @@ endif
 
 ### Build section ###
 
-ALL=mime-base mime-brain mime-terminal mime-capture mime-face mime-limbs
-all: $(ALL)
+MAIN=mime-base mime-brain mime-terminal mime-capture mime-face mime-limbs
+DEV=mime-terminal
+
+all: $(MAIN) $(DEV)
+main: $(MAIN)
+dev: $(DEV)
 
 mime-base: $(DEPS)
 	docker build --target="$@" --tag="$@:$(TAG_NAME)" --network="$(NOBLE_NETWORK)" .
@@ -50,4 +54,4 @@ mime-limbs: ./limbs $(DEPS) | mime-base
 clean:
 	docker container prune
 	docker image prune
-	docker rmi $(ALL)
+	docker rmi $(MAIN) $(DEV)

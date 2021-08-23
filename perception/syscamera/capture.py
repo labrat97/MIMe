@@ -2,7 +2,7 @@ import cv2 as cv
 import numpy as np
 import torch
 
-import config
+from . import config
 
 class RetinalSystem(cv.VideoCapture):
     def __init__(self, id:int, calib:np.ndarray, width:int=3280, height:int=2464, fps:int=21):

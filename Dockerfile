@@ -157,7 +157,8 @@ RUN echo 'source ${ROS_ROOT}/install/setup.bash' >> /root/.bashrc
 # Finish up and turn into a command
 WORKDIR ${PROGHOME}
 COPY config/. ${PROGHOME}/config/
-ENTRYPOINT python3 ${PROGHOME}/${DEFAULTSCRIPT}
+ENTRYPOINT chmod +x ${PROGHOME}/${DEFAULTSCRIPT} && \
+    bash --init-file ${PROGHOME}/${DEFAULTSCRIPT}
 
 
 
@@ -165,27 +166,36 @@ ENTRYPOINT python3 ${PROGHOME}/${DEFAULTSCRIPT}
 
 
 
+## Build dependencies defined first ##
+FROM mime-base as mime-base-installing
+RUN apt-get update -qq
+ENV CAPTURE_DEPENDENCIES="libnvvpi1 vpi1-dev python3-vpi1 alsa-base alsa-utils"
+ENV FACIAL_DEPENDENCIES="golang-1.13 golang-1.13-doc golang-1.13-go golang-1.13-src"
+
+
 # Enables terminal access
-FROM mime-base as mime-terminal
+FROM mime-base-installing as mime-terminal
+RUN apt-get install -y -qq ${CAPTURE_DEPENDENCIES}
+RUN apt-get install -y -qq ${FACIAL_DEPENDENCIES}
 COPY terminal/. ${PROGHOME}/
+COPY . ${PROGHOME}/source/
+
+
+# Captures data from physical and virtual sensors
+FROM mime-base-installing AS mime-capture
+RUN apt-get install -y -qq ${CAPTURE_DEPENDENCIES}
+COPY perception/. ${PROGHOME}/
+
+
+# Displays facial features
+FROM mime-base-installing as mime-face
+RUN apt-get install -y -qq ${FACIAL_DEPENDENCIES}
+COPY face/. ${PROGHOME}/
 
 
 # Run main ROS processes and JAMES functionality
 FROM mime-base AS mime-brain
 COPY brain/. ${PROGHOME}
-
-
-# Captures data from physical and virtual sensors
-FROM mime-base AS mime-capture
-COPY perception/. ${PROGHOME}/
-RUN apt-get update -qq && apt-get install -y -qq libnvvpi1 alsa-base alsa-utils
-
-
-# Displays facial features
-FROM mime-base as mime-face
-COPY face/. ${PROGHOME}/
-RUN apt-get update -qq && apt-get install -y -qq \
-    golang-1.13 golang-1.13-doc golang-1.13-go golang-1.13-src
 
 
 # Wrangle MIMe attachments
