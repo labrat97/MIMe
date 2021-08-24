@@ -21,7 +21,7 @@ def loadModel() -> torch.nn.Module:
     model.eval()
     return model
 
-def quickPred(model:torch.nn.Module, x:np.ndarray) -> np.ndarray:
+def pred(model:torch.nn.Module, x:np.ndarray) -> np.ndarray:
     with torch.no_grad():
         lx = torch.Tensor(x).cuda()
         result = model(lx).cpu().detach().numpy()

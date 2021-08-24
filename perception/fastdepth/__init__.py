@@ -1,1 +1,1 @@
-import interop
+from .interop import *
