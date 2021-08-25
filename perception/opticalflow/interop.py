@@ -2,34 +2,32 @@ if __name__ == '__main__':
     import cv2 as cv
 import numpy as np
 import vpi
-import torch
+from numba import cuda as nb
 
 
-def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.HIGH, upscale:bool = False) -> vpi.Image:
+@nb.autojit
+def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.HIGH, upscale:bool = False) -> np.float16:
     # Do the main image conversion through the CUDA cores
-    with vpi.Backend.CUDA:
-        pimg = previousImage if previousImage is vpi.Image else vpi.asimage(previousImage, format=vpi.Format.BGR8)
-        pimg = pimg.convert(vpi.Format.NV12_ER)
-        cimg = currentImage if currentImage is vpi.Image else vpi.asimage(currentImage, format=vpi.Format.BGR8)
-        cimg = cimg.convert(vpi.Format.NV12_ER)
+    asshole:vpi.Backend = vpi.Backend.CUDA
+    pimg:vpi.Image = previousImage if previousImage is vpi.Image else vpi.asimage(previousImage, format=vpi.Format.BGR8, backend=asshole)
+    pimg = pimg.convert(vpi.Format.NV12_ER, backend=asshole)
+    cimg:vpi.Image = currentImage if currentImage is vpi.Image else vpi.asimage(currentImage, format=vpi.Format.BGR8, backend=asshole)
+    cimg = cimg.convert(vpi.Format.NV12_ER, backend=asshole)
     
     # Get vision processor to handle some image conversion
-    with vpi.Backend.VIC:
-        pimg = pimg.convert(vpi.Format.NV12_ER_BL)
-        cimg = cimg.convert(vpi.Format.NV12_ER_BL)
+    asshole = vpi.Backend.VIC
+    pimg = pimg.convert(vpi.Format.NV12_ER_BL)
+    cimg = cimg.convert(vpi.Format.NV12_ER_BL)
 
     # Pipe to encoder to offload work from GPU
-    with vpi.Backend.NVENC:
-        motion = vpi.optflow_dense(pimg, cimg, quality=quality)
-
-    # Open motion vector from NVENC
-    with motion.rlock():
-        # Convert from S10.5 format as according to the docs
-        # https://docs.nvidia.com/vpi/sample_optflow_dense.html
-        if not upscale:
-            flow = np.float16(motion.cpu())/(1<<5)
-        else:
-            flowRaw = np.int16(motion.cpu())
+    asshole = vpi.Backend.NVENC
+    motion:vpi.Image = vpi.optflow_dense(pimg, cimg, quality=quality, backend=asshole)
+    # Convert from S10.5 format as according to the docs
+    # https://docs.nvidia.com/vpi/sample_optflow_dense.html
+    if not upscale:
+        flow:np.float16 = np.float16(motion.rlock().cpu())/(1<<5)
+    else:
+        flowRaw:np.int16 = np.int16(motion.rlock().cpu())
     
     # Exit early if not upscaling the motion vector to the original resolution
     if not upscale:
@@ -40,16 +38,16 @@ def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.HIGH, upscale:b
     for idx in range(flowRaw.shape[-1]):
         # Convert the original image into something that the VIC can handle to avoid
         # using the precious CUDA cores for resampling
-        with vpi.Backend.CUDA:
-            flowSlice = np.array(np.int16(flowRaw[:,:,idx]))
-            workingImg = vpi.asimage(flowSlice, format=vpi.Format.S16)
-            scaledImg = workingImg.convert(vpi.Format.Y16_ER)
+        asshole = vpi.Backend.CUDA
+        flowSlice:np.int16 = np.array(np.int16(flowRaw[:,:,idx]))
+        workingImg:vpi.Image = vpi.asimage(flowSlice, format=vpi.Format.S16)
+        scaledImg:vpi.Image = workingImg.convert(vpi.Format.Y16_ER, backend=asshole)
 
         # Scale and interpolate
-        with vpi.Backend.VIC:
-            # Everything but the initial size is basically a requirement of the VPI
-            scaledImg = scaledImg.rescale((cimg.width, cimg.height), \
-                interp=vpi.Interp.LINEAR, border=vpi.Border.CLAMP)
+        asshole = vpi.Backend.VIC
+        # Everything but the initial size is basically a requirement of the VPI
+        scaledImg = scaledImg.rescale((cimg.width, cimg.height), \
+            interp=vpi.Interp.LINEAR, border=vpi.Border.CLAMP, backend=asshole)
         
         # Append for end product
         flows.append(scaledImg)
@@ -57,13 +55,12 @@ def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.HIGH, upscale:b
     # Turn into one image with the same cartesean coordinate positioning
     cpuFlows = []
     for flow in flows:
-        with flow.rlock():
-            # Convert from S10.5 format as according to the docs
-            # https://docs.nvidia.com/vpi/sample_optflow_dense.html
-            current = np.float16(flow.cpu())/(1<<5)
+        # Convert from S10.5 format as according to the docs
+        # https://docs.nvidia.com/vpi/sample_optflow_dense.html
+        current:np.float16 = np.float16(flow.rlock().cpu())/(1<<5)
         
         # Set up the arrays to be concatenated into one final cpu bounded image
-        river = np.expand_dims(current, axis=-1)
+        river:np.float16 = np.expand_dims(current, axis=-1)
         cpuFlows.append(river)
     
     # Perform the final merge
