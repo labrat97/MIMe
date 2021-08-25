@@ -168,22 +168,24 @@ ENTRYPOINT chmod +x ${PROGHOME}/${DEFAULTSCRIPT} && \
 
 ## Build dependencies defined first ##
 FROM mime-base as mime-base-installing
-RUN apt-get update -qq
 #ENV VPI_BASE_DEPENDENCIES="libnvvpi1 vpi1-dev"
 ENV CAPTURE_DEPENDENCIES="python3-vpi1 alsa-base alsa-utils"
-ENV CAPTURE_DEPENDENCIES_PIP3="timm"
 ENV FACIAL_DEPENDENCIES="golang-1.13 golang-1.13-doc golang-1.13-go golang-1.13-src"
 ENV TERMINAL_DEPENDENCIES="magic-wormhole git"
+RUN apt-get update -qq
+ENV CAPTURE_DEPENDENCIES_PIP3="scipy timm"
 
 
 # Enables terminal access
 FROM mime-base-installing as mime-terminal
 RUN apt-get install -y ${CAPTURE_DEPENDENCIES}
-RUN pip3 install ${CAPTURE_DEPENDENCIES_PIP3}
 RUN apt-get install -y ${FACIAL_DEPENDENCIES}
 RUN apt-get install -y ${TERMINAL_DEPENDENCIES}
+RUN pip3 install -U ${CAPTURE_DEPENDENCIES_PIP3}
+
 COPY terminal/. ${PROGHOME}/
-COPY . ${PROGHOME}/source/
+#COPY . ${PROGHOME}/source/
+VOLUME ${PROGHOME}/source/
 
 
 # Captures data from physical and virtual sensors
