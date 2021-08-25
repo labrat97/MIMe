@@ -1,11 +1,10 @@
 if __name__ == '__main__':
     import cv2 as cv
-import numpy as np
 import vpi
 import torch
 
 
-def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.HIGH, upscale:bool = False) -> vpi.Image:
+def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.HIGH, upscale:bool = False) -> torch.Tensor:
     # Do the main image conversion through the CUDA cores
     with vpi.Backend.CUDA:
         pimg = previousImage if previousImage is vpi.Image else vpi.asimage(previousImage, format=vpi.Format.BGR8)
@@ -27,47 +26,52 @@ def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.HIGH, upscale:b
         # Convert from S10.5 format as according to the docs
         # https://docs.nvidia.com/vpi/sample_optflow_dense.html
         if not upscale:
-            flow = np.float16(motion.cpu())/(1<<5)
+            #flow = np.float16(motion.cpu())/(1<<5)
+            flow = torch.Tensor(motion.cpu()).detach().cuda()
+            flow.type = torch.float16
+            flow.div_(1<<5)
         else:
-            flowRaw = np.int16(motion.cpu())
+            #flowRaw = np.int16(motion.cpu())
+            flowRaw = torch.Tensor(motion.cpu()).detach().cuda()
+            flowRaw.type = torch.int16
     
     # Exit early if not upscaling the motion vector to the original resolution
     if not upscale:
         return flow
 
 
+    # Upsample using hardware acceleration
     flows = []
     for idx in range(flowRaw.shape[-1]):
-        # Convert the original image into something that the VIC can handle to avoid
-        # using the precious CUDA cores for resampling
+        # The VIC is too slow for how much this could be called
         with vpi.Backend.CUDA:
-            flowSlice = np.array(np.int16(flowRaw[:,:,idx]))
-            workingImg = vpi.asimage(flowSlice, format=vpi.Format.S16)
-            scaledImg = workingImg.convert(vpi.Format.Y16_ER)
-
-        # Scale and interpolate
-        with vpi.Backend.VIC:
-            # Everything but the initial size is basically a requirement of the VPI
-            scaledImg = scaledImg.rescale((cimg.width, cimg.height), \
-                interp=vpi.Interp.LINEAR, border=vpi.Border.CLAMP)
+            # Casting needed, not quite sure why but we are rollin with it
+            flowSlice = np.int16(flowRaw[:,:,idx].cpu().numpy())
+            wimg = vpi.asimage(flowSlice, format=vpi.Format.S16) \
+                .convert(vpi.Format.Y16_ER) \
+                .rescale((cimg.width, cimg.height), \
+                    interp=vpi.Interp.LINEAR, border=vpi.Border.CLAMP)
         
         # Append for end product
-        flows.append(scaledImg)
+        flows.append(wimg)
     
     # Turn into one image with the same cartesean coordinate positioning
-    cpuFlows = []
+    plasmaFlows = []
     for flow in flows:
         with flow.rlock():
             # Convert from S10.5 format as according to the docs
             # https://docs.nvidia.com/vpi/sample_optflow_dense.html
-            current = np.float16(flow.cpu())/(1<<5)
+            current = torch.Tensor(np.int16(flow.cpu())).detach().cuda()
+            current.type = torch.float16
+            current.div_(1<<5)
         
         # Set up the arrays to be concatenated into one final cpu bounded image
-        river = np.expand_dims(current, axis=-1)
-        cpuFlows.append(river)
+        #river = np.expand_dims(current, axis=-1)
+        river = torch.unsqueeze(current, dim=-1)
+        plasmaFlows.append(river)
     
     # Perform the final merge
-    return np.concatenate(cpuFlows, axis=-1)
+    return torch.cat(plasmaFlows, dim=-1)
 
 
 if __name__ == "__main__":
@@ -75,6 +79,8 @@ if __name__ == "__main__":
     import gc
 
     import syscamera as camera
+    import numpy as np
+    import time
 
     def __listret__(frames):
         result:bool = True
@@ -92,17 +98,29 @@ if __name__ == "__main__":
 
     ret:bool = __listret__(previousFrames)
     cacheItr:int = 0
-    while ret:
-        if cacheItr % CACHE_MOD_CLEAR == 0:
-            gc.collect()
-            vpi.clear_cache()
-        currentFrames = [caps[idx].read() for idx in range(2)]
-        if not __listret__(currentFrames):
-            break
-        motions = [pred(previousFrames[idx][1], currentFrames[idx][1], upscale=True) for idx in range(CAM_COUNT)]
+    try:
+        while ret:
+            startTime = time.time()
 
-        print(f'frame: {currentFrames[0][1].shape}')
-        print(f'motion: {motions[0].shape}\n')
+            capTime = time.time()
+            currentFrames = [caps[idx].read() for idx in range(2)]
+            endCapTime = time.time()
 
-        previousFrames = currentFrames
-        ret = __listret__(previousFrames)
+            ret = __listret__(currentFrames)
+            if not ret:
+                break
+            motions = [pred(previousFrames[idx][1], currentFrames[idx][1], upscale=True) for idx in range(CAM_COUNT)]
+
+            # Scoot the frames on back
+            previousFrames = currentFrames
+
+            # Clear cache at zero and clear cache every CACHE_MOD_CLEAR steps
+            cacheItr = cacheItr + 1
+            if cacheItr % CACHE_MOD_CLEAR == 0:
+                gc.collect()
+                vpi.clear_cache()
+
+            print(f"outer-loop-itr (sec):\t{time.time()-startTime}")
+            print(f"cap-time (sec): \t{endCapTime-capTime}")
+    except:
+        [n.release() for n in caps]
