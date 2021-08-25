@@ -48,8 +48,9 @@ def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.HIGH, upscale:b
             # Casting needed, not quite sure why but we are rollin with it
             flowSlice = np.int16(flowRaw[:,:,idx].cpu().numpy())
             wimg = vpi.asimage(flowSlice, format=vpi.Format.S16) \
-                .convert(vpi.Format.Y16_ER) \
-                .rescale((cimg.width, cimg.height), \
+                .convert(format=vpi.Format.Y16_ER)
+        with vpi.Backend.VIC:
+            wimg = wimg.rescale((cimg.width, cimg.height), \
                     interp=vpi.Interp.LINEAR, border=vpi.Border.CLAMP)
         
         # Append for end product
@@ -97,30 +98,56 @@ if __name__ == "__main__":
     previousFrames = [caps[idx].read() for idx in range(2)]
 
     ret:bool = __listret__(previousFrames)
-    cacheItr:int = 0
-    try:
-        while ret:
-            startTime = time.time()
+    cacheItr:int = 4
+    UPSCALE:bool = False
 
-            capTime = time.time()
+    try:
+        capTimes = []
+        startTimes = []
+        stopTimes = []
+        while ret:
+            if cacheItr % CACHE_MOD_CLEAR != 0:
+                startTimes.append(time.time())
+
             currentFrames = [caps[idx].read() for idx in range(2)]
-            endCapTime = time.time()
+            if cacheItr % CACHE_MOD_CLEAR != 0:
+                capTimes.append(time.time())
 
             ret = __listret__(currentFrames)
             if not ret:
                 break
-            motions = [pred(previousFrames[idx][1], currentFrames[idx][1], upscale=True) for idx in range(CAM_COUNT)]
+            motions = [pred(previousFrames[idx][1], currentFrames[idx][1], upscale=UPSCALE) for idx in range(CAM_COUNT)]
 
             # Scoot the frames on back
             previousFrames = currentFrames
 
             # Clear cache at zero and clear cache every CACHE_MOD_CLEAR steps
+            if cacheItr % CACHE_MOD_CLEAR != 0:
+                stopTimes.append(time.time())
             cacheItr = cacheItr + 1
             if cacheItr % CACHE_MOD_CLEAR == 0:
                 gc.collect()
                 vpi.clear_cache()
 
-            print(f"outer-loop-itr (sec):\t{time.time()-startTime}")
-            print(f"cap-time (sec): \t{endCapTime-capTime}")
-    except:
+                startT = torch.DoubleTensor(startTimes).detach().cpu()
+                capT = torch.DoubleTensor(capTimes).detach().cpu()
+                stopT = torch.DoubleTensor(stopTimes).detach().cpu()
+
+                outerLoopAvg = torch.mean(stopT-startT, axis=0)
+                capTimeAvg = torch.mean(capT-startT, axis=0)
+                postProcAvg = torch.mean(stopT-capT, axis=0)
+
+                torch.cuda.synchronize()
+                print(f"outer-loop-itr (sec):\t{float(outerLoopAvg)}" \
+                    + f" fps: {int(1/outerLoopAvg)} Hz")
+                print(f"cap-time (sec): \t{float(capTimeAvg)}" \
+                    + f" fps: {int(1/capTimeAvg)} Hz")
+                print(f"post-proc (sec): \t{float(postProcAvg)}" \
+                    + f" fps: {int(1/postProcAvg)} Hz")
+                print(f"upscale (bool): \t{UPSCALE}\n")
+
+                startTimes.clear()
+                capTimes.clear()
+                stopTimes.clear()
+    except InterruptedError:
         [n.release() for n in caps]
