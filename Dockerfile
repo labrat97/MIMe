@@ -171,6 +171,7 @@ FROM mime-base as mime-base-installing
 RUN apt-get update -qq
 #ENV VPI_BASE_DEPENDENCIES="libnvvpi1 vpi1-dev"
 ENV CAPTURE_DEPENDENCIES="python3-vpi1 alsa-base alsa-utils"
+ENV CAPTURE_DEPENDENCIES_PIP3="timm"
 ENV FACIAL_DEPENDENCIES="golang-1.13 golang-1.13-doc golang-1.13-go golang-1.13-src"
 ENV TERMINAL_DEPENDENCIES="magic-wormhole git"
 
@@ -178,6 +179,7 @@ ENV TERMINAL_DEPENDENCIES="magic-wormhole git"
 # Enables terminal access
 FROM mime-base-installing as mime-terminal
 RUN apt-get install -y ${CAPTURE_DEPENDENCIES}
+RUN pip3 install ${CAPTURE_DEPENDENCIES_PIP3}
 RUN apt-get install -y ${FACIAL_DEPENDENCIES}
 RUN apt-get install -y ${TERMINAL_DEPENDENCIES}
 COPY terminal/. ${PROGHOME}/
@@ -187,6 +189,7 @@ COPY . ${PROGHOME}/source/
 # Captures data from physical and virtual sensors
 FROM mime-base-installing AS mime-capture
 RUN apt-get install -y -qq ${CAPTURE_DEPENDENCIES}
+RUN pip3 install ${CAPTURE_DEPENDENCIES_PIP3}
 COPY perception/. ${PROGHOME}/
 
 
