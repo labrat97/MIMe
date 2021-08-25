@@ -1,5 +1,4 @@
 import cv2 as cv
-import numpy as np
 import syscamera as camera
 import vpi
 import gc
