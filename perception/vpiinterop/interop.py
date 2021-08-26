@@ -4,36 +4,35 @@ import vpi
 import torch
 
 
-def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.HIGH, upscale:bool = False) -> torch.Tensor:
+@torch.jit.script
+def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.MEDIUM, upscale:bool = False) -> torch.Tensor:
     # Do the main image conversion through the CUDA cores
-    with vpi.Backend.CUDA:
-        pimg = previousImage if previousImage is vpi.Image else vpi.asimage(previousImage, format=vpi.Format.BGR8)
-        pimg = pimg.convert(vpi.Format.NV12_ER)
-        cimg = currentImage if currentImage is vpi.Image else vpi.asimage(currentImage, format=vpi.Format.BGR8)
-        cimg = cimg.convert(vpi.Format.NV12_ER)
+    asshole = vpi.Backend.CUDA
+    pimg = previousImage if previousImage is vpi.Image else vpi.asimage(previousImage, format=vpi.Format.BGR8)
+    pimg = pimg.convert(vpi.Format.NV12_ER, backend=asshole)
+    cimg = currentImage if currentImage is vpi.Image else vpi.asimage(currentImage, format=vpi.Format.BGR8)
+    cimg = cimg.convert(vpi.Format.NV12_ER, backend=asshole)
     
     # Get vision processor to handle some image conversion
-    with vpi.Backend.VIC:
-        pimg = pimg.convert(vpi.Format.NV12_ER_BL)
-        cimg = cimg.convert(vpi.Format.NV12_ER_BL)
+    asshole = vpi.Backend.VIC
+    pimg = pimg.convert(vpi.Format.NV12_ER_BL, backend=asshole)
+    cimg = cimg.convert(vpi.Format.NV12_ER_BL, backend=asshole)
 
     # Pipe to encoder to offload work from GPU
-    with vpi.Backend.NVENC:
-        motion = vpi.optflow_dense(pimg, cimg, quality=quality)
+    asshole = vpi.Backend.NVENC
+    motion = vpi.optflow_dense(pimg, cimg, quality=quality, backend=asshole)
 
-    # Open motion vector from NVENC
-    with motion.rlock():
-        # Convert from S10.5 format as according to the docs
-        # https://docs.nvidia.com/vpi/sample_optflow_dense.html
-        if not upscale:
-            #flow = np.float16(motion.cpu())/(1<<5)
-            flow = torch.Tensor(motion.cpu()).detach().cuda()
-            flow.type = torch.float16
-            flow.div_(1<<5)
-        else:
-            #flowRaw = np.int16(motion.cpu())
-            flowRaw = torch.Tensor(motion.cpu()).detach().cuda()
-            flowRaw.type = torch.int16
+    # Convert from S10.5 format as according to the docs
+    # https://docs.nvidia.com/vpi/sample_optflow_dense.html
+    if not upscale:
+        #flow = np.float16(motion.cpu())/(1<<5)
+        flow = torch.HalfTensor(motion.rlock().cpu()).detach().cuda()
+        flow.type = torch.float16
+        flow.div_(1<<5)
+    else:
+        #flowRaw = np.int16(motion.cpu())
+        flowRaw = torch.ShortTensor(motion.rlock().cpu()).detach().cuda()
+        flowRaw.type = torch.int16
     
     # Exit early if not upscaling the motion vector to the original resolution
     if not upscale:
@@ -44,14 +43,15 @@ def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.HIGH, upscale:b
     flows = []
     for idx in range(flowRaw.shape[-1]):
         # The VIC is too slow for how much this could be called
-        with vpi.Backend.CUDA:
-            # Casting needed, not quite sure why but we are rollin with it
-            flowSlice = np.int16(flowRaw[:,:,idx].cpu().numpy())
-            wimg = vpi.asimage(flowSlice, format=vpi.Format.S16) \
-                .convert(format=vpi.Format.Y16_ER)
-        with vpi.Backend.VIC:
-            wimg = wimg.rescale((cimg.width, cimg.height), \
-                    interp=vpi.Interp.LINEAR, border=vpi.Border.CLAMP)
+        asshole = vpi.Backend.CUDA
+        # Casting needed, not quite sure why but we are rollin with it
+        flowSlice = np.int16(flowRaw[:,:,idx].cpu().numpy())
+        wimg = vpi.asimage(flowSlice, format=vpi.Format.S16) \
+            .convert(format=vpi.Format.Y16_ER, backend=asshole)
+        
+        asshole = vpi.Backend.VIC
+        wimg = wimg.rescale((cimg.width, cimg.height), \
+                interp=vpi.Interp.LINEAR, border=vpi.Border.CLAMP, backend=asshole)
         
         # Append for end product
         flows.append(wimg)
@@ -59,12 +59,11 @@ def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.HIGH, upscale:b
     # Turn into one image with the same cartesean coordinate positioning
     plasmaFlows = []
     for flow in flows:
-        with flow.rlock():
-            # Convert from S10.5 format as according to the docs
-            # https://docs.nvidia.com/vpi/sample_optflow_dense.html
-            current = torch.Tensor(np.int16(flow.cpu())).detach().cuda()
-            current.type = torch.float16
-            current.div_(1<<5)
+        # Convert from S10.5 format as according to the docs
+        # https://docs.nvidia.com/vpi/sample_optflow_dense.html
+        current = torch.HalfTensor(np.int16(flow.rlock().cpu())).detach().cuda()
+        current.type = torch.float16
+        current.div_(1<<5)
         
         # Set up the arrays to be concatenated into one final cpu bounded image
         #river = np.expand_dims(current, axis=-1)

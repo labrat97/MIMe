@@ -1,6 +1,7 @@
 {
     "python.pythonPath": "/usr/local/bin/python3",
     "files.associations": {
-        "eye.h": "c"
+        "eye.h": "c",
+        "thread": "cpp"
     }
 }
