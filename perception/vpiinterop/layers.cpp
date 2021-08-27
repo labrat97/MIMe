@@ -25,6 +25,8 @@
 // Handle linking to torch libraries
 #include <torch/extension.h>
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
+#define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 
 
 // VPI metadata
@@ -43,6 +45,7 @@ VPIImage __motionBL;
 VPIImage __prev, __curr;
 VPIPayload __payload;
 
+
 // Torch metadata for constructing result
 auto __torchOpts = torch::TensorOptions()
     .dtype(torch::kInt16)
@@ -52,22 +55,23 @@ auto __torchOpts = torch::TensorOptions()
 
 // Transfer data from a torch Tensor to the VPI
 VPIImageData __transfer(torch::Tensor* x, VPIImagePlane* planes) {
-        for (int i = 0; i < x->size(0); i++) {
-            auto plane = &(planes[i]);
+    for (int i = 0; i < x->size(0); i++) {
+        auto plane = &(planes[i]);
 
-            plane->data = x->data_ptr();
-            plane->height = x->size(1);
-            plane->width = x->size(2);
-            plane->pitchBytes = 1; // TODO: I feel like I'm wrong here
-            plane->pixelType = __pixelType;
-        }
+        plane->data = x->data_ptr();
+        plane->height = x->size(1);
+        plane->width = x->size(2);
+        plane->pitchBytes = 1; // TODO: I feel like I'm wrong here
+        plane->pixelType = __pixelType;
+    }
 
-        return {
-            .format = __formatNative,
-            .numPlanes = x->size(0),
-            .planes = *planes
-        };
+    return {
+        .format = __formatNative,
+        .numPlanes = x->size(0),
+        .planes = *planes
     };
+};
+
 
 // Take a set of tensors from torch, detach, and perform dense optical flow on them
 torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg, 
@@ -75,8 +79,8 @@ torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg,
         bool upscale = false) {
     /// Precheck ///
     // The correct backend is being used
-    CHECK_CUDA(prevImg);
-    CHECK_CUDA(currImg);
+    CHECK_INPUT(prevImg);
+    CHECK_INPUT(currImg);
 
     // Extract the native quality setting from the input string
     if (quality == "low") __qualityNative = VPI_OPTICAL_FLOW_QUALITY_LOW;
