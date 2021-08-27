@@ -1,3 +1,4 @@
+// Handle linking to VPI libraries
 #include <vpi/Array.h>
 #include <vpi/Image.h>
 #include <vpi/ImageFormat.h>
@@ -21,21 +22,35 @@
         }                                                     \
     } while (0);
 
+// Handle linking to torch libraries
 #include <torch/extension.h>
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
 
 
+// VPI metadata
 VPIStream __stream;
 VPIOpticalFlowQuality __qualityNative;
 VPIImageFormat __formatNative;
 VPIPixelType __pixelType;
 VPIImagePlane __prevPlanes[VPI_MAX_PLANE_COUNT];
 VPIImagePlane __currPlanes[VPI_MAX_PLANE_COUNT];
+VPIImagePlane __movePlanes[VPI_MAX_PLANE_COUNT];
 
+// VPI images and payloads for dense optical flow
 VPIImage __prevInter, __currInter;
 VPIImage __prevCUDA, __currCUDA, __prevBL, __currBL;
-VPIImage __motionBL, __motion;
+VPIImage __motionBL;
+VPIImage __prev, __curr;
+VPIPayload __payload;
 
+// Torch metadata for constructing result
+auto __torchOpts = torch::TensorOptions()
+    .dtype(torch::kInt16)
+    .layout(torch::kStrided)
+    .device(torch::kCUDA, 0)
+    .requires_grad(false);
+
+// Transfer data from a torch Tensor to the VPI
 VPIImageData __transfer(torch::Tensor* x, VPIImagePlane* planes) {
         for (int i = 0; i < x->size(0); i++) {
             auto plane = &(planes[i]);
@@ -43,17 +58,18 @@ VPIImageData __transfer(torch::Tensor* x, VPIImagePlane* planes) {
             plane->data = x->data_ptr();
             plane->height = x->size(1);
             plane->width = x->size(2);
-            plane->pitchBytes = 1;
+            plane->pitchBytes = 1; // TODO: I feel like I'm wrong here
             plane->pixelType = __pixelType;
         }
 
         return {
             .format = __formatNative,
             .numPlanes = x->size(0),
-            .planes = planes
+            .planes = *planes
         };
     };
 
+// Take a set of tensors from torch, detach, and perform dense optical flow on them
 torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg, 
         std::string quality = "med", std::string format = "rgb",
         bool upscale = false) {
@@ -92,21 +108,68 @@ torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg,
     CHECK_STATUS(vpiImageCreateCUDAMemWrapper(&prevDat, VPI_BACKEND_CUDA, &__prevCUDA));
     CHECK_STATUS(vpiImageCreateCUDAMemWrapper(&currDat, VPI_BACKEND_CUDA, &__currCUDA));
 
-    // Get ready for NVENC with the VIC
-    VPIImage prev, curr;
+    // Get ready for the VIC
     if (__formatNative != VPI_IMAGE_FORMAT_NV12_ER) {
-        // Convert the images
+        // Set up the computation
         CHECK_STATUS(vpiImageCreate(prevRaw.size(1), prevRaw.size(2), 
-            VPI_IMAGE_FORMAT_NV12_ER, VPI_BACKEND_CUDA, &__prevInter));
+            VPI_IMAGE_FORMAT_NV12_ER, VPI_BACKEND_CUDA, &__prev));
         CHECK_STATUS(vpiImageCreate(currRaw.size(1), currRaw.size(2),
-            VPI_IMAGE_FORMAT_NV12_ER, VPI_BACKEND_CUDA, &__currInter));
+            VPI_IMAGE_FORMAT_NV12_ER, VPI_BACKEND_CUDA, &__curr));
         
-        // Format to something that works with the NVENC
-        VPIConvertImageFormatParams toNV12;
-        toNV12.scale = 1; toNV12.offset = 0;
-        toNV12.flags = VPI_BACKEND_CUDA;
-        toNV12.policy = VPI_CONVERSION_CLAMP;
-        CHECK_STATUS(vpiInitConvertImageFormatParams(&toNV12));
-        CHECK_STATUS(vpiSubmitConvertImageFormat())
+        // Change the format of the images
+        CHECK_STATUS(vpiSubmitConvertImageFormat(__stream, VPI_BACKEND_CUDA, __prevCUDA, __prev, nullptr));
+        CHECK_STATUS(vpiSubmitConvertImageFormat(__stream, VPI_BACKEND_CUDA, __currCUDA, __curr, nullptr));
     }
+    else {
+        // Move images over
+        __prev = __prevCUDA;
+        __curr = __currCUDA;
+    }
+    
+    // Handle final run-up to NVENC
+    CHECK_STATUS(vpiImageCreate(prevRaw.size(1), prevRaw.size(2),
+        VPI_IMAGE_FORMAT_NV12_ER_BL, VPI_BACKEND_VIC, &__prevInter));
+    CHECK_STATUS(vpiImageCreate(currRaw.size(1), currRaw.size(2),
+        VPI_IMAGE_FORMAT_NV12_ER_BL, VPI_BACKEND_VIC, &__currInter));
+
+    // Convert image to block linear for processing
+    CHECK_STATUS(vpiSubmitConvertImageFormat(__stream, VPI_BACKEND_VIC, __prev, __prevInter, nullptr));
+    CHECK_STATUS(vpiSubmitConvertImageFormat(__stream, VPI_BACKEND_VIC, __curr, __currInter, nullptr));
+
+
+    /// Compute ///
+    // Create motion vector
+    auto resultRaw = torch::zeros({prevRaw.size(0), prevRaw.size(1) / 4, prevRaw.size(2) / 4, 2}, __torchOpts);
+    auto resultDat = __transfer(&resultRaw, __movePlanes);
+    CHECK_STATUS(vpiImageCreateCUDAMemWrapper(&resultDat, VPI_BACKEND_CUDA, &__motionBL));
+
+    // Set up and compute dense optical flow
+    CHECK_STATUS(vpiCreateOpticalFlowDense(VPI_BACKEND_NVENC, 
+        prevRaw.size(1), prevRaw.size(2), VPI_IMAGE_FORMAT_NV12_ER_BL, 
+        __qualityNative, &__payload));
+    CHECK_STATUS(vpiSubmitOpticalFlowDense(__stream, VPI_BACKEND_NVENC, __payload, 
+        __prevInter, __currInter, __motionBL));
+
+
+    /// Return ///
+    // Convert back to torch and return
+    CHECK_STATUS(vpiStreamSync(__stream));
+    auto result = resultRaw.to(torch::kFloat16, true, false).div(1 << 5);
+
+    // Clean up
+    vpiStreamDestroy(__stream);
+    vpiPayloadDestroy(__payload);
+
+    vpiImageDestroy(__prevInter);
+    vpiImageDestroy(__currInter);
+    vpiImageDestroy(__prevCUDA);
+    vpiImageDestroy(__currCUDA);
+    vpiImageDestroy(__prevBL);
+    vpiImageDestroy(__currBL);
+    vpiImageDestroy(__motionBL);
+    vpiImageDestroy(__curr);
+    vpiImageDestroy(__prev);
+
+    // Done.
+    return result;
 }
