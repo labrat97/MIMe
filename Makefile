@@ -1,8 +1,11 @@
 # Basic config
-DEPS=Dockerfile ./config
+DEPS=./config ./Dockerfile.base
+SLAVE_DEPS=$(DEPS) ./Dockerfile.leaf
 DEFAULT_RUN_FLAGS=-id --rm --runtime=nvidia
 NOBLE_NETWORK=host
 SLAVE_NETWORK=host
+DOCKER_BASE=./Dockerfile.base
+DOCKER_LEAF=./Dockerfile.leaf
 
 # Creates the tagname of the images from the branch of the git
 BRANCH_NAME=$(shell git rev-parse --abbrev-ref HEAD)
@@ -15,30 +18,39 @@ endif
 
 ### Build section ###
 
-MAIN=mime-base mime-brain mime-terminal mime-capture mime-face mime-limbs
+
+BASE=mime-base
+MAIN=mime-brain mime-capture mime-face mime-limbs
 DEV=mime-terminal
 
-all: $(MAIN) $(DEV)
-main: $(MAIN)
-dev: $(DEV)
+DEFAULT_OPTIONS=--target="$@" --tag="$@:$(TAG_NAME)" --build-arg TAGN=$(TAG_NAME)
+BASE_OPTIONS=$(DEFAULT_OPTIONS) --network="$(NOBLE_NETWORK)"
+BRAIN_OPTIONS=$(BASE_OPTIONS)
+__DEFAULT_LEAF_OPTIONS=$(DEFAULT_OPTIONS)
+NORMAL_LEAF_OPTIONS=$(__DEFAULT_LEAF_OPTIONS) --network="$(SLAVE_NETWORK)"
+DEV_LEAF_OPTIONS=$(__DEFAULT_LEAF_OPTIONS) --network="$(NOBLE_NETWORK)" --no-cache
+
+all: $(BASE) $(MAIN) $(DEV)
+main: $(BASE) $(MAIN)
+dev: $(BASE) $(DEV)
 
 mime-base: $(DEPS)
-	docker build --target="$@" --tag="$@:$(TAG_NAME)" --network="$(NOBLE_NETWORK)" .
+	docker build $(BASE_OPTIONS) -f $(DOCKER_BASE) .
 
-mime-brain: $(DEPS) | mime-base
-	docker build --target="$@" --tag="$@:$(TAG_NAME)" --network="$(NOBLE_NETWORK)" .
+mime-brain: $(SLAVE_DEPS) | mime-base
+	docker build $(BRAIN_OPTIONS) -f $(DOCKER_LEAF) .
 
-mime-terminal: ./terminal $(DEPS) | mime-base
-	docker build --target="$@" --tag="$@:$(TAG_NAME)" --network="$(NOBLE_NETWORK)" .
+mime-terminal: ./terminal $(SLAVE_DEPS) | mime-base
+	docker build $(DEV_LEAF_OPTIONS) -f $(DOCKER_LEAF) .
 
-mime-capture: ./perception $(DEPS) | mime-base
-	docker build --target="$@" --tag="$@:$(TAG_NAME)" --network="$(SLAVE_NETWORK)" .
+mime-capture: ./perception $(SLAVE_DEPS) | mime-base
+	docker build $(NORMAL_LEAF_OPTIONS) -f $(DOCKER_LEAF) .
 
-mime-face: ./face $(DEPS) | mime-base
-	docker build --target="$@" --tag="$@:$(TAG_NAME)" --network="$(SLAVE_NETWORK)" .
+mime-face: ./face $(SLAVE_DEPS) | mime-base
+	docker build $(NORMAL_LEAF_OPTIONS) -f $(DOCKER_LEAF) .
 
-mime-limbs: ./limbs $(DEPS) | mime-base
-	docker build --target="$@" --tag="$@:$(TAG_NAME)" --network="$(SLAVE_NETWORK)" .
+mime-limbs: ./limbs $(SLAVE_DEPS) | mime-base
+	docker build $(NORMAL_LEAF_OPTIONS) -f $(DOCKER_LEAF) .
 
 
 ### RUN SECTION ###
@@ -53,5 +65,8 @@ mime-limbs: ./limbs $(DEPS) | mime-base
 .PHONY: clean
 clean:
 	docker container prune
+	for dImage in $(BASE) $(MAIN) $(DEV) ; do \
+		docker rmi -f $$dImage:$(TAG_NAME) ; \
+	done
 	docker image prune
-	docker rmi $(MAIN) $(DEV)
+	

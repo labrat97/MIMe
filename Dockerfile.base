@@ -8,8 +8,7 @@ ENV DEFAULTSCRIPT=init.sh
 
 
 # Bring current
-RUN apt-get update -qq
-RUN apt-get install -y -qq && apt-get dist-upgrade -y -qq
+RUN apt-get update -qq && apt-get dist-upgrade -y -qq
 
 # Add VPI Support
 RUN apt-key adv --fetch-key http://repo.download.nvidia.com/jetson/jetson-ota-public.asc
@@ -163,54 +162,3 @@ ENTRYPOINT chmod +x ${PROGHOME}/${DEFAULTSCRIPT} && \
 
 
 ### LATER BUILD STAGES AFTER THIS POINT ###
-
-
-
-## Build dependencies defined first ##
-FROM mime-base as mime-base-installing
-ENV CAPTURE_DEPENDENCIES="python3-vpi1 alsa-base alsa-utils"
-ENV FACIAL_DEPENDENCIES="golang-1.13 golang-1.13-doc golang-1.13-go golang-1.13-src"
-ENV TERMINAL_DEPENDENCIES="magic-wormhole git"
-RUN apt-get update -qq
-ENV CAPTURE_DEPENDENCIES_PIP3="scipy timm"
-
-FROM mime-base-installing as mime-base-vpi
-ENV VPI_BASE_DEPENDENCIES="libnvvpi1 vpi1-dev"
-RUN apt-get install -y ${VPI_BASE_DEPENDENCIES}
-COPY perception/vpiinterop /.
-RUN python3 /vpiinterop/setup.py install
-
-
-# Enables terminal access
-FROM mime-base-vpi as mime-terminal
-RUN apt-get install -y ${CAPTURE_DEPENDENCIES}
-RUN apt-get install -y ${FACIAL_DEPENDENCIES}
-RUN apt-get install -y ${TERMINAL_DEPENDENCIES}
-RUN pip3 install -U ${CAPTURE_DEPENDENCIES_PIP3}
-
-COPY terminal/. ${PROGHOME}/
-#COPY . ${PROGHOME}/source/
-VOLUME ${PROGHOME}/source/
-
-
-# Captures data from physical and virtual sensors
-FROM mime-base-vpi AS mime-capture
-RUN apt-get install -y -qq ${CAPTURE_DEPENDENCIES}
-RUN pip3 install ${CAPTURE_DEPENDENCIES_PIP3}
-COPY perception/. ${PROGHOME}/
-
-
-# Displays facial features
-FROM mime-base-installing as mime-face
-RUN apt-get install -y -qq ${FACIAL_DEPENDENCIES}
-COPY face/. ${PROGHOME}/
-
-
-# Run main ROS processes and JAMES functionality
-FROM mime-base AS mime-brain
-COPY brain/. ${PROGHOME}
-
-
-# Wrangle MIMe attachments
-FROM mime-base AS mime-limbs
-COPY limbs/. ${PROGHOME}/
