@@ -1,1 +1,8 @@
 __pycache__
+CMakeFiles
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+detect_cuda_version.cc
+detect_cuda_compute_capabilities.cpp
+*.so

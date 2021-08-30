@@ -4,7 +4,6 @@ import vpi
 import torch
 
 
-@torch.jit.script
 def pred(previousImage, currentImage, quality=vpi.OptFlowQuality.MEDIUM, upscale:bool = False) -> torch.Tensor:
     # Do the main image conversion through the CUDA cores
     asshole = vpi.Backend.CUDA

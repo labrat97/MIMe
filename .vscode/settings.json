@@ -3,5 +3,6 @@
     "files.associations": {
         "eye.h": "c",
         "thread": "cpp"
-    }
+    },
+    "cmake.configureOnOpen": false
 }

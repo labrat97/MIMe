@@ -23,6 +23,7 @@
     } while (0);
 
 // Handle linking to torch libraries
+#include <torch/torch.h>
 #include <torch/extension.h>
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
@@ -54,9 +55,15 @@ auto __torchOpts = torch::TensorOptions()
     .requires_grad(false);
 
 // Transfer data from a torch Tensor to the VPI
-VPIImageData __transfer(torch::Tensor* x, VPIImagePlane* planes) {
+VPIImageData __transfer(torch::Tensor* x, VPIImagePlane* planeData) {
+    // Hard limit the amount of planes going in to the VPI-set limit of 6
+    size_t planeCount;
+    if (x->size(0) > 6) planeCount = 6;
+    else planeCount = x->size(0);
+    
+    // Transfer each frame
     for (int i = 0; i < x->size(0); i++) {
-        auto plane = &(planes[i]);
+        auto plane = &(planeData[i]);
 
         plane->data = x->data_ptr();
         plane->height = x->size(1);
@@ -65,17 +72,19 @@ VPIImageData __transfer(torch::Tensor* x, VPIImagePlane* planes) {
         plane->pixelType = __pixelType;
     }
 
-    return {
-        .format = __formatNative,
-        .numPlanes = x->size(0),
-        .planes = *planes
-    };
+    // Construct result for return
+    auto result = VPIImageData();
+    result.format = __formatNative;
+    result.numPlanes = (int)x->size(0);
+    memccpy(result.planes, planeData, planeCount, sizeof(VPIImagePlane));
+
+    return result;
 };
 
 
 // Take a set of tensors from torch, detach, and perform dense optical flow on them
 torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg, 
-        std::string quality = "med", std::string format = "rgb",
+        std::string quality = "high", std::string format = "rgb",
         bool upscale = false) {
     /// Precheck ///
     // The correct backend is being used
@@ -176,4 +185,8 @@ torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg,
 
     // Done.
     return result;
+}
+
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("denseFlow", &denseFlow, "NV VPI Dense Optical Flow");
 }

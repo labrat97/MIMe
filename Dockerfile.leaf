@@ -12,7 +12,7 @@ ENV VPI_BASE_DEPENDENCIES="libnvvpi1 vpi1-dev"
 
 ENV FACIAL_DEPENDENCIES="golang-1.13 golang-1.13-doc golang-1.13-go golang-1.13-src"
 ENV TERMINAL_DEPENDENCIES="magic-wormhole git"
-ENV CAPTURE_DEPENDENCIES="python3-vpi1 alsa-base alsa-utils ninja-build"
+ENV CAPTURE_DEPENDENCIES="python3-vpi1 alsa-base alsa-utils ninja-build pybind11-dev"
 ENV CAPTURE_DEPENDENCIES_PIP3="timm scipy"
 
 FROM mime-dependencies as mime-update

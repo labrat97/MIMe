@@ -30,9 +30,18 @@ __DEFAULT_LEAF_OPTIONS=$(DEFAULT_OPTIONS)
 NORMAL_LEAF_OPTIONS=$(__DEFAULT_LEAF_OPTIONS) --network="$(SLAVE_NETWORK)"
 DEV_LEAF_OPTIONS=$(__DEFAULT_LEAF_OPTIONS) --network="$(NOBLE_NETWORK)" --no-cache
 
+
 all: $(BASE) $(MAIN) $(DEV)
 main: $(BASE) $(MAIN)
 dev: $(BASE) $(DEV)
+
+
+# I'm being really lazy with the dependencies right here
+__buildVPI: perception/vpiinterop/*
+	cmake -DTorch_DIR=/usr/local/lib/python3.6/dist-packages/torch/share/cmake/Torch/ \
+		perception/vpiinterop/build/. perception/vpiinterop/.
+	(cd perception/vpiinterop/build && make)
+
 
 mime-base: $(DEPS)
 	docker build $(BASE_OPTIONS) -f $(DOCKER_BASE) .
@@ -40,10 +49,7 @@ mime-base: $(DEPS)
 mime-brain: $(SLAVE_DEPS) | mime-base
 	docker build $(BRAIN_OPTIONS) -f $(DOCKER_LEAF) .
 
-mime-terminal: ./terminal $(SLAVE_DEPS) | mime-base
-	docker build $(DEV_LEAF_OPTIONS) -f $(DOCKER_LEAF) .
-
-mime-capture: ./perception $(SLAVE_DEPS) | mime-base
+mime-capture: ./perception $(SLAVE_DEPS) | mime-base __buildVPI
 	docker build $(NORMAL_LEAF_OPTIONS) -f $(DOCKER_LEAF) .
 
 mime-face: ./face $(SLAVE_DEPS) | mime-base
@@ -51,6 +57,9 @@ mime-face: ./face $(SLAVE_DEPS) | mime-base
 
 mime-limbs: ./limbs $(SLAVE_DEPS) | mime-base
 	docker build $(NORMAL_LEAF_OPTIONS) -f $(DOCKER_LEAF) .
+
+mime-terminal: ./terminal $(SLAVE_DEPS) | all
+	docker build $(DEV_LEAF_OPTIONS) -f $(DOCKER_LEAF) .
 
 
 ### RUN SECTION ###
@@ -68,5 +77,6 @@ clean:
 	for dImage in $(BASE) $(MAIN) $(DEV) ; do \
 		docker rmi -f $$dImage:$(TAG_NAME) ; \
 	done
+	rm -rf perception/vpiinterop/build/*
 	docker image prune
 	
