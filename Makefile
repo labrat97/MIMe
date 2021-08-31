@@ -36,20 +36,13 @@ main: $(BASE) $(MAIN)
 dev: $(BASE) $(DEV)
 
 
-# I'm being really lazy with the dependencies right here
-__buildVPI: perception/vpiinterop/*
-	cmake -DTorch_DIR=/usr/local/lib/python3.6/dist-packages/torch/share/cmake/Torch/ \
-		perception/vpiinterop/build/. perception/vpiinterop/.
-	(cd perception/vpiinterop/build && make)
-
-
 mime-base: $(DEPS)
 	docker build $(BASE_OPTIONS) -f $(DOCKER_BASE) .
 
 mime-brain: $(SLAVE_DEPS) | mime-base
 	docker build $(BRAIN_OPTIONS) -f $(DOCKER_LEAF) .
 
-mime-capture: ./perception $(SLAVE_DEPS) | mime-base __buildVPI
+mime-capture: ./perception $(SLAVE_DEPS) | mime-base
 	docker build $(NORMAL_LEAF_OPTIONS) -f $(DOCKER_LEAF) .
 
 mime-face: ./face $(SLAVE_DEPS) | mime-base
@@ -58,7 +51,7 @@ mime-face: ./face $(SLAVE_DEPS) | mime-base
 mime-limbs: ./limbs $(SLAVE_DEPS) | mime-base
 	docker build $(NORMAL_LEAF_OPTIONS) -f $(DOCKER_LEAF) .
 
-mime-terminal: ./terminal $(SLAVE_DEPS) | all
+mime-terminal: ./terminal $(SLAVE_DEPS) | mime-base
 	docker build $(DEV_LEAF_OPTIONS) -f $(DOCKER_LEAF) .
 
 
