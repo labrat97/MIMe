@@ -28,7 +28,7 @@
 #define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
-
+#define TORCH_EXTENSION_NAME vpiinterop
 
 // VPI metadata
 VPIStream __stream;
@@ -187,6 +187,15 @@ torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg,
     return result;
 }
 
+#include <pybind11/pybind11.h>
+namespace py = pybind11;
+
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("denseFlow", &denseFlow, "NV VPI Dense Optical Flow");
+    m.doc() = "Runs a torch tensor through the nvidia vpi";
+    m.def("denseFlow", &denseFlow, "NV VPI Dense Optical Flow",
+        py::arg("prevImage"),
+        py::arg("currImage"),
+        py::arg("quality") = "high",
+        py::arg("format") = "rgb",
+        py::arg("upscale") = false);
 }
