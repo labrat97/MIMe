@@ -8,7 +8,8 @@ FROM mime-base:$TAGN as mime-dependencies
 ENV CUDA_HOME="/usr/local/cuda"
 ENV CPATH="${CUDA_HOME}/include:${CPATH}"
 ENV LIBRARY_PATH="${CUDA_HOME}/lib64:$LIBRARY_PATH"
-ENV VPI_BASE_DEPENDENCIES="libnvvpi1 vpi1-dev cmake pybind11-dev"
+ENV VPI_BASE_DEPENDENCIES="cmake pybind11-dev" 
+# libnvvpi1 vpi1-dev 
 
 ENV FACIAL_DEPENDENCIES="golang-1.13 golang-1.13-doc golang-1.13-go golang-1.13-src"
 ENV TERMINAL_DEPENDENCIES="magic-wormhole git"
@@ -20,7 +21,6 @@ RUN apt-get autoclean && apt-get update -qq
 
 FROM mime-update as mime-update-vpi
 RUN apt-get install -y ${VPI_BASE_DEPENDENCIES}
-
 
 # Enables terminal access
 FROM mime-update-vpi as mime-terminal

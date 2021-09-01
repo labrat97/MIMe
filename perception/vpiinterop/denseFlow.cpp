@@ -25,13 +25,15 @@
 // Handle linking to torch libraries
 #include <torch/torch.h>
 #include <torch/extension.h>
-#define CHECK_CUDA(x) TORCH_CHECK(x.type().is_cuda(), #x " must be a CUDA tensor")
+#define CHECK_CUDA(x) TORCH_CHECK(x.is_cuda(), #x " must be a CUDA tensor")
 #define CHECK_CONTIGUOUS(x) TORCH_CHECK(x.is_contiguous(), #x " must be contiguous")
 #define CHECK_INPUT(x) CHECK_CUDA(x); CHECK_CONTIGUOUS(x)
 #define TORCH_EXTENSION_NAME vpiinterop
 
+#include <iostream>
+
 // VPI metadata
-VPIStream __stream;
+VPIStream __stream = nullptr;
 VPIOpticalFlowQuality __qualityNative;
 VPIImageFormat __formatNative;
 VPIPixelType __pixelType;
@@ -42,7 +44,7 @@ VPIImagePlane __movePlanes[VPI_MAX_PLANE_COUNT];
 // VPI images and payloads for dense optical flow
 VPIImage __prevInter, __currInter;
 VPIImage __prevCUDA, __currCUDA, __prevBL, __currBL;
-VPIImage __motionBL;
+VPIImage __motion, __motionBL;
 VPIImage __prev, __curr;
 VPIPayload __payload;
 
@@ -55,7 +57,10 @@ auto __torchOpts = torch::TensorOptions()
     .requires_grad(false);
 
 // Transfer data from a torch Tensor to the VPI
-VPIImageData __transfer(torch::Tensor* x, VPIImagePlane* planeData) {
+#define LAZYASS_DEBUG true
+VPIImageData* __transfer(torch::Tensor* x, VPIImagePlane* planeData, 
+        const VPIPixelType* pType=nullptr, const size_t* pitchWidth=nullptr, 
+        const VPIImageFormat* iFormat=nullptr) {
     // Hard limit the amount of planes going in to the VPI-set limit of 6
     size_t planeCount;
     if (x->size(0) > 6) planeCount = 6;
@@ -67,16 +72,20 @@ VPIImageData __transfer(torch::Tensor* x, VPIImagePlane* planeData) {
 
         plane->data = x->data_ptr();
         plane->height = x->size(1);
+        if (LAZYASS_DEBUG) std::cout << "Height: " << x->size(1) << std::endl;
         plane->width = x->size(2);
-        plane->pitchBytes = 1; // TODO: I feel like I'm wrong here
-        plane->pixelType = __pixelType;
+        if (LAZYASS_DEBUG) std::cout << "Width: " << x->size(2) << std::endl;
+        plane->pitchBytes = plane->width * ((pitchWidth == nullptr) ? 3 : *pitchWidth);
+        plane->pixelType = (pType == nullptr) ? __pixelType : *pType;
     }
 
     // Construct result for return
-    auto result = VPIImageData();
-    result.format = __formatNative;
-    result.numPlanes = (int)x->size(0);
-    memccpy(result.planes, planeData, planeCount, sizeof(VPIImagePlane));
+    auto result = new VPIImageData();
+    result->format = (iFormat == nullptr) ? __formatNative : *iFormat;
+    result->numPlanes = (int)x->size(0);
+    for (int i = 0; i < result->numPlanes; i++) {
+        result->planes[i] = planeData[i];
+    }
 
     return result;
 };
@@ -85,7 +94,7 @@ VPIImageData __transfer(torch::Tensor* x, VPIImagePlane* planeData) {
 // Take a set of tensors from torch, detach, and perform dense optical flow on them
 torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg, 
         std::string quality = "high", std::string format = "rgb",
-        bool upscale = false) {
+        bool upscale = false, bool keepAliveStream = true) {
     /// Precheck ///
     // The correct backend is being used
     CHECK_INPUT(prevImg);
@@ -109,7 +118,7 @@ torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg,
 
     // Start up stream to VPI
     if (__stream == nullptr)
-        CHECK_STATUS(vpiStreamCreate(VPI_BACKEND_CUDA | VPI_BACKEND_NVENC | VPI_BACKEND_VIC, &__stream));
+        CHECK_STATUS(vpiStreamCreate(VPI_BACKEND_ALL, &__stream));
 
     // Pull out of gradient from Torch
     auto prevRaw = prevImg.detach();
@@ -118,8 +127,10 @@ torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg,
     auto currDat = __transfer(&currRaw, __currPlanes);
 
     // Make VPI compatible without leaving CUDA context
-    CHECK_STATUS(vpiImageCreateCUDAMemWrapper(&prevDat, VPI_BACKEND_CUDA, &__prevCUDA));
-    CHECK_STATUS(vpiImageCreateCUDAMemWrapper(&currDat, VPI_BACKEND_CUDA, &__currCUDA));
+    CHECK_STATUS(vpiImageCreateCUDAMemWrapper(prevDat, VPI_BACKEND_CUDA, &__prevCUDA));
+    if (LAZYASS_DEBUG) std::cout << "prevDat was successfully wrapped in a VPI Image." << std::endl;
+    CHECK_STATUS(vpiImageCreateCUDAMemWrapper(currDat, VPI_BACKEND_CUDA, &__currCUDA));
+    if (LAZYASS_DEBUG) std::cout << "CUDA Wrapped!" << std::endl;
 
     // Get ready for the VIC
     if (__formatNative != VPI_IMAGE_FORMAT_NV12_ER) {
@@ -132,6 +143,10 @@ torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg,
         // Change the format of the images
         CHECK_STATUS(vpiSubmitConvertImageFormat(__stream, VPI_BACKEND_CUDA, __prevCUDA, __prev, nullptr));
         CHECK_STATUS(vpiSubmitConvertImageFormat(__stream, VPI_BACKEND_CUDA, __currCUDA, __curr, nullptr));
+        if (LAZYASS_DEBUG) {
+            CHECK_STATUS(vpiStreamSync(__stream));
+            std::cout << "Image converted." << std::endl;
+        }
     }
     else {
         // Move images over
@@ -148,30 +163,48 @@ torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg,
     // Convert image to block linear for processing
     CHECK_STATUS(vpiSubmitConvertImageFormat(__stream, VPI_BACKEND_VIC, __prev, __prevInter, nullptr));
     CHECK_STATUS(vpiSubmitConvertImageFormat(__stream, VPI_BACKEND_VIC, __curr, __currInter, nullptr));
-
+    if (LAZYASS_DEBUG) {
+        CHECK_STATUS(vpiStreamSync(__stream));
+        std::cout << "Converted to BL." << std::endl;
+    }
 
     /// Compute ///
-    // Create motion vector
-    auto resultRaw = torch::zeros({prevRaw.size(0), prevRaw.size(1) / 4, prevRaw.size(2) / 4, 2}, __torchOpts);
-    auto resultDat = __transfer(&resultRaw, __movePlanes);
-    CHECK_STATUS(vpiImageCreateCUDAMemWrapper(&resultDat, VPI_BACKEND_CUDA, &__motionBL));
-
     // Set up and compute dense optical flow
+    CHECK_STATUS(vpiImageCreate(prevRaw.size(1) / 4, prevRaw.size(2) / 4, VPI_IMAGE_FORMAT_2S16_BL, VPI_BACKEND_NVENC, &__motionBL));
     CHECK_STATUS(vpiCreateOpticalFlowDense(VPI_BACKEND_NVENC, 
         prevRaw.size(1), prevRaw.size(2), VPI_IMAGE_FORMAT_NV12_ER_BL, 
         __qualityNative, &__payload));
+    if (LAZYASS_DEBUG) {
+        CHECK_STATUS(vpiStreamSync(__stream));
+        std::cout << "Sync'd before the dense calc." << std::endl;
+    }
     CHECK_STATUS(vpiSubmitOpticalFlowDense(__stream, VPI_BACKEND_NVENC, __payload, 
         __prevInter, __currInter, __motionBL));
+    if (LAZYASS_DEBUG) std::cout << "Dense calc'd." << std::endl;
 
 
     /// Return ///
-    // Convert back to torch and return
+    // Final sync-up for the VPI prior to falling back into torch
     CHECK_STATUS(vpiStreamSync(__stream));
-    auto result = resultRaw.to(torch::kFloat16, true, false).div(1 << 5);
+    if (LAZYASS_DEBUG) std::cout << "Ready for final conversion." << std::endl;
+
+    // Handle conversion from NVidia's inhouse chosen S10.5 format
+    // https://docs.nvidia.com/vpi/algo_optflow_dense.html
+    VPIImageData resultDat;
+    CHECK_STATUS(vpiImageLock(__motionBL, VPI_LOCK_READ, &resultDat));
+
+    auto result = torch::zeros({prevRaw.size(0), prevRaw.size(1) / 4, prevRaw.size(2) / 4, 2}, __torchOpts);
+    for (int i = 0; i < prevRaw.size(0); i++) {
+        result[i] = torch::from_blob(resultDat.planes[i].data, {prevRaw.size(1), prevRaw.size(2), 2}, __torchOpts);
+    }
+    
+    CHECK_STATUS(vpiImageUnlock(__motion));
 
     // Clean up
-    vpiStreamDestroy(__stream);
-    vpiPayloadDestroy(__payload);
+    delete prevDat;
+    delete currDat;
+
+    if (!keepAliveStream) vpiStreamDestroy(__stream);
 
     vpiImageDestroy(__prevInter);
     vpiImageDestroy(__currInter);
@@ -197,5 +230,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
         py::arg("currImage"),
         py::arg("quality") = "high",
         py::arg("format") = "rgb",
-        py::arg("upscale") = false);
+        py::arg("upscale") = false,
+        py::arg("keepAliveStream") = true);
 }

@@ -1,3 +1,6 @@
 #!/bin/bash
+
 source /ros_entrypoint.sh
-exec "$@"
+source source/perception/init.sh
+cd source/perception/
+python3 
