@@ -1,17 +1,19 @@
 import torch
+from torch2trt import torch2trt
 import numpy as np
-from os import listdir
-from os.path import isfile, join, dirname
-import cv2 as cv
 
-from torch._C import dtype
-
-def loadModel() -> tuple(torch.nn.Module, torch.nn.Module):
+def loadModel(inputSize:torch.Size) -> tuple(torch.nn.Module, torch.nn.Module):
     INTEL_MIDAS = "intel-isl/MiDaS"
-    MIDAS_MODEL = "MiDaS_small"
+    MIDAS_MODEL = "DPT_HYBRID"
 
-    model = torch.hub.load(INTEL_MIDAS, MIDAS_MODEL).cuda().eval()
-    transform = torch.hub.load(INTEL_MIDAS, "transforms").small_transform.cuda().eval()
+    hubmodel = torch.hub.load(INTEL_MIDAS, MIDAS_MODEL).eval().cuda()
+    hubtransform = torch.hub.load(INTEL_MIDAS, "transforms").dpt_transform.eval().cuda()
+
+    xtran = torch.ones(inputSize).cuda()
+    xmod = torch.ones_like(hubtransform(xtran)).cuda()
+    transform = torch2trt(hubtransform, [xtran])
+    model = torch2trt(hubmodel, [xmod])
+
 
     return model, transform
 
