@@ -1,3 +1,5 @@
+#define LAZYASS_DEBUG false
+
 // Handle linking to VPI libraries
 #include <vpi/Array.h>
 #include <vpi/Image.h>
@@ -8,6 +10,9 @@
 #include <vpi/CUDAInterop.h>
 #include <vpi/algo/ConvertImageFormat.h>
 #include <vpi/algo/OpticalFlowDense.h>
+#include <opencv2/opencv.hpp>
+#include <opencv2/core/cuda.hpp>
+#include <vpi/OpenCVInterop.hpp>
 #define CHECK_STATUS(STMT)                                    \
     do                                                        \
     {                                                         \
@@ -44,20 +49,12 @@ VPIImagePlane __movePlanes[VPI_MAX_PLANE_COUNT];
 // VPI images and payloads for dense optical flow
 VPIImage __prevInter, __currInter;
 VPIImage __prevCUDA, __currCUDA, __prevBL, __currBL;
-VPIImage __motion, __motionBL;
+VPIImage __motionBL;
 VPIImage __prev, __curr;
 VPIPayload __payload;
 
 
-// Torch metadata for constructing result
-auto __torchOpts = torch::TensorOptions()
-    .dtype(torch::kInt16)
-    .layout(torch::kStrided)
-    .device(torch::kCUDA, 0)
-    .requires_grad(false);
-
 // Transfer data from a torch Tensor to the VPI
-#define LAZYASS_DEBUG true
 VPIImageData* __transfer(torch::Tensor* x, VPIImagePlane* planeData, 
         const VPIPixelType* pType=nullptr, const size_t* pitchWidth=nullptr, 
         const VPIImageFormat* iFormat=nullptr) {
@@ -127,18 +124,18 @@ torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg,
     auto currDat = __transfer(&currRaw, __currPlanes);
 
     // Make VPI compatible without leaving CUDA context
-    CHECK_STATUS(vpiImageCreateCUDAMemWrapper(prevDat, VPI_BACKEND_CUDA, &__prevCUDA));
+    CHECK_STATUS(vpiImageCreateCUDAMemWrapper(prevDat, NULL, &__prevCUDA));
     if (LAZYASS_DEBUG) std::cout << "prevDat was successfully wrapped in a VPI Image." << std::endl;
-    CHECK_STATUS(vpiImageCreateCUDAMemWrapper(currDat, VPI_BACKEND_CUDA, &__currCUDA));
+    CHECK_STATUS(vpiImageCreateCUDAMemWrapper(currDat, NULL, &__currCUDA));
     if (LAZYASS_DEBUG) std::cout << "CUDA Wrapped!" << std::endl;
 
     // Get ready for the VIC
     if (__formatNative != VPI_IMAGE_FORMAT_NV12_ER) {
         // Set up the computation
         CHECK_STATUS(vpiImageCreate(prevRaw.size(1), prevRaw.size(2), 
-            VPI_IMAGE_FORMAT_NV12_ER, VPI_BACKEND_CUDA, &__prev));
+            VPI_IMAGE_FORMAT_NV12_ER, NULL, &__prev));
         CHECK_STATUS(vpiImageCreate(currRaw.size(1), currRaw.size(2),
-            VPI_IMAGE_FORMAT_NV12_ER, VPI_BACKEND_CUDA, &__curr));
+            VPI_IMAGE_FORMAT_NV12_ER, NULL, &__curr));
         
         // Change the format of the images
         CHECK_STATUS(vpiSubmitConvertImageFormat(__stream, VPI_BACKEND_CUDA, __prevCUDA, __prev, nullptr));
@@ -156,9 +153,12 @@ torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg,
     
     // Handle final run-up to NVENC
     CHECK_STATUS(vpiImageCreate(prevRaw.size(1), prevRaw.size(2),
-        VPI_IMAGE_FORMAT_NV12_ER_BL, VPI_BACKEND_VIC, &__prevInter));
+        VPI_IMAGE_FORMAT_NV12_ER_BL, NULL, &__prevInter));
     CHECK_STATUS(vpiImageCreate(currRaw.size(1), currRaw.size(2),
-        VPI_IMAGE_FORMAT_NV12_ER_BL, VPI_BACKEND_VIC, &__currInter));
+        VPI_IMAGE_FORMAT_NV12_ER_BL, NULL, &__currInter));
+    if (LAZYASS_DEBUG) {
+        std::cout << "Created BL inter targets." << std::endl;
+    }
 
     // Convert image to block linear for processing
     CHECK_STATUS(vpiSubmitConvertImageFormat(__stream, VPI_BACKEND_VIC, __prev, __prevInter, nullptr));
@@ -190,17 +190,38 @@ torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg,
 
     // Handle conversion from NVidia's inhouse chosen S10.5 format
     // https://docs.nvidia.com/vpi/algo_optflow_dense.html
+    // Unfortunately, after much effort, I cannot seem to do this without using the CPU
+    cv::Mat resultRaw;
     VPIImageData resultDat;
     CHECK_STATUS(vpiImageLock(__motionBL, VPI_LOCK_READ, &resultDat));
+    if (LAZYASS_DEBUG) std::cout << "Conversion lock." << std::endl;
+    CHECK_STATUS(vpiImageDataExportOpenCVMat(resultDat, &resultRaw));
+    if (LAZYASS_DEBUG) std::cout << "Completed export to OpenCV." << std::endl;
 
-    auto result = torch::zeros({prevRaw.size(0), prevRaw.size(1) / 4, prevRaw.size(2) / 4, 2}, __torchOpts);
-    for (int i = 0; i < prevRaw.size(0); i++) {
-        result[i] = torch::from_blob(resultDat.planes[i].data, {prevRaw.size(1), prevRaw.size(2), 2}, __torchOpts);
-    }
-    
-    CHECK_STATUS(vpiImageUnlock(__motion));
+    // Transfer back into GPU
+    cv::Mat resultPre(resultRaw.size(), CV_16FC2);
+    // Not doing scalar here
+    resultRaw.convertTo(resultPre, CV_16F);
+    if (LAZYASS_DEBUG) std::cout << "Converted to unscaled" << std::endl;
+    CHECK_STATUS(vpiImageUnlock(__motionBL));
+    if (LAZYASS_DEBUG) std::cout << "Conversion unlock." << std::endl;
 
-    // Clean up
+    // Look, finishing touch
+    // Torch metadata for constructing result
+    const auto __torchOpts = torch::TensorOptions()
+        .dtype(torch::kFloat16)
+        .layout(torch::kStrided)
+        .requires_grad(false);
+    // Copy data back into torch GPU runtime
+    auto result = torch::from_blob((void*)resultPre.data, {prevRaw.size(0), 
+        prevRaw.size(1) / 4, prevRaw.size(2) / 4, 2}, __torchOpts).cuda().detach();
+    if (LAZYASS_DEBUG) std::cout << "Torch tensor constructed for return." << std::endl;
+    result.div_(1 << 5);
+    if (LAZYASS_DEBUG) std::cout << "Scaled from S10.5 on: " << result.device() << std::endl;
+
+
+
+    /// Clean up ///
     delete prevDat;
     delete currDat;
 
@@ -220,6 +241,9 @@ torch::Tensor denseFlow(torch::Tensor prevImg, torch::Tensor currImg,
     return result;
 }
 
+
+
+/// Bind into Python ///
 #include <pybind11/pybind11.h>
 namespace py = pybind11;
 

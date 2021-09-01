@@ -2,7 +2,13 @@
     "python.pythonPath": "/usr/local/bin/python3",
     "files.associations": {
         "eye.h": "c",
-        "thread": "cpp"
+        "thread": "cpp",
+        "array": "cpp",
+        "bitset": "cpp",
+        "string_view": "cpp",
+        "initializer_list": "cpp",
+        "utility": "cpp",
+        "valarray": "cpp"
     },
     "cmake.configureOnOpen": false
 }

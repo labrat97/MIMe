@@ -153,6 +153,11 @@ RUN echo 'source ${ROS_ROOT}/install/setup.bash' >> /root/.bashrc
 ### END SELECTIVE COPY ###
 
 
+# Link up OpenCV "just being cute" and not working right
+RUN ln -s /usr/include/opencv4/opencv2 /usr/include/opencv2 && \
+    ln -s /usr/local/include/opencv4/opencv2 /usr/local/include/opencv2
+
+
 # Finish up and turn into a command
 WORKDIR ${PROGHOME}
 COPY config/. ${PROGHOME}/config/
