@@ -2,21 +2,19 @@ import torch
 from torch2trt import torch2trt
 import numpy as np
 
-def loadModel(inputSize:torch.Size) -> tuple(torch.nn.Module):
+def loadModel(inputSize:torch.Size) -> tuple([torch.nn.Module, torch.nn.Module]):
     INTEL_MIDAS = "intel-isl/MiDaS"
-    MIDAS_MODEL = "DPT_HYBRID"
+    MIDAS_MODEL = "MiDaS"
 
     hubmodel = torch.hub.load(INTEL_MIDAS, MIDAS_MODEL).eval().cuda()
-    hubtransform = torch.hub.load(INTEL_MIDAS, "transforms").dpt_transform.eval().cuda()
+    transform = torch.hub.load(INTEL_MIDAS, "transforms").small_transform
 
-    xtran = torch.ones(inputSize).cuda()
-    xmod = torch.ones_like(hubtransform(xtran)).cuda()
-    transform = torch2trt(hubtransform, [xtran])
-    model = torch2trt(hubmodel, [xmod])
+    x = torch.ones_like(transform(torch.ones(inputSize).numpy())).cuda()
+    model = torch2trt(hubmodel, [x])
 
     return model, transform
 
-def pred(model:torch.nn.Module, transform:torch.nn.Module, image:torch.Tensor) -> torch.Tensor:
+def pred(model:torch.nn.Module, transform:torch.nn.Module, image:np.array) -> torch.Tensor:
     with torch.no_grad():
         embeddedImage = transform(image).cuda()
         rawDepth = model(embeddedImage).cuda()
