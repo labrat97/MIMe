@@ -1,16 +1,12 @@
 import torch
-from torch2trt import torch2trt
 import numpy as np
 
 def loadModel(inputSize:torch.Size) -> tuple([torch.nn.Module, torch.nn.Module]):
     INTEL_MIDAS = "intel-isl/MiDaS"
     MIDAS_MODEL = "MiDaS"
 
-    hubmodel = torch.hub.load(INTEL_MIDAS, MIDAS_MODEL).eval().cuda()
+    model = torch.hub.load(INTEL_MIDAS, MIDAS_MODEL).eval().cuda()
     transform = torch.hub.load(INTEL_MIDAS, "transforms").small_transform
-
-    x = torch.ones_like(transform(torch.ones(inputSize).numpy())).cuda()
-    model = torch2trt(hubmodel, [x])
 
     return model, transform
 
