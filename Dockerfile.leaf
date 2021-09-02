@@ -5,6 +5,8 @@ ARG TAGN
 
 ## Build dependencies defined first ##
 FROM mime-base:$TAGN as mime-dependencies
+ENV TRT_URL="https://github.com/NVIDIA-AI-IOT/torch2trt/archive/refs/tags/v0.3.0.tar.gz"
+
 ENV CUDA_HOME="/usr/local/cuda"
 ENV CPATH="${CUDA_HOME}/include:${CPATH}"
 ENV LIBRARY_PATH="${CUDA_HOME}/lib64:$LIBRARY_PATH"
