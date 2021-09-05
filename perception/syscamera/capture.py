@@ -15,4 +15,6 @@ class RetinalSystem(cv.VideoCapture):
 
     def read(self, undist:bool=True, undistOptimal:bool=False):
         rawFrame, ret = super(RetinalSystem, self).read()
+        if not ret: return ret
+
         
