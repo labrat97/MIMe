@@ -19,7 +19,7 @@ CALIB_FNAME:str = f'cam{CAMERA_IDX}.npz'
 COMPUTE_SCALAR:float = 2
 
 # Set up the termination criteria
-criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 50, 0.00033)
+criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 100, 0.0001)
 
 # Prepare object points according to:
 # https://docs.opencv.org/4.5.1/dc/dbb/tutorial_py_calibration.html
@@ -57,7 +57,7 @@ capture.release()
 if PRINT_RESULTS: print('Capture released for analysis.')
 
 for idx, frame in enumerate(frames):
-    cornret, corners = cv.findChessboardCorners(frame, BOARD_SIZE, None, cv.CALIB_CB_ADAPTIVE_THRESH + cv.CALIB_CB_FILTER_QUADS + cv.CALIB_CB_FAST_CHECK + cv.CALIB_CB_NORMALIZE_IMAGE + cv.CALIB_CB_ACCURACY)
+    cornret, corners = cv.findChessboardCorners(frame, BOARD_SIZE, None, cv.CALIB_CB_ADAPTIVE_THRESH + cv.CALIB_CB_EXHAUSTIVE + cv.CALIB_CB_ACCURACY)
     if PRINT_RESULTS: print(f'Corner computation {idx} completed...')
     
     # Find the sub-pixel coordinates of the corners in the frames
@@ -67,14 +67,14 @@ for idx, frame in enumerate(frames):
 
         # The tuples here are basically magic to me right now:
         # https://docs.opencv.org/4.5.1/dc/dbb/tutorial_py_calibration.html
-        subcorn = cv.cornerSubPix(grey, corners, (11,11), (-1,-1), criteria)
+        subcorn = cv.cornerSubPix(grey, corners, (5,5), (-1,-1), criteria)
         resimg.append(subcorn)
     
     # Break early
     if len(resimg) >= GOOD_FRAMES:
         break
 
-calibret, calibMat, distCoeff, rvecs, tvecs = cv.calibrateCamera(resobj, resimg, (grey.shape[::-1]), None, None)
+calibret, calibMat, distCoeff, rvecs, tvecs = cv.calibrateCamera(resobj, resimg, (grey.shape[::-1]), None, None, flags=(cv.CALIB_RATIONAL_MODEL+cv.CALIB_FIX_ASPECT_RATIO))
 imgHeight, imgWidth = grey.shape[:2]
 optimalCalibMat, roi = cv.getOptimalNewCameraMatrix(calibMat, distCoeff, (imgWidth,imgHeight), alpha=1, newImgSize=(imgWidth,imgHeight))
 
