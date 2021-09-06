@@ -12,14 +12,14 @@ CHESSBOARD_WIDTH:int = 9
 CHESSBOARD_HEIGHT:int = 6
 BOARD_SIZE:tuple() = (CHESSBOARD_HEIGHT,CHESSBOARD_WIDTH)
 CAMERA_SECOND:int = 21
-GOOD_FRAMES:int = CAMERA_SECOND/2
-CAP_FRAMES:int = 100
+GOOD_FRAMES:int = CAMERA_SECOND*2
+CAP_FRAMES:int = CAMERA_SECOND*10
 PRINT_RESULTS:bool = True
 CALIB_FNAME:str = f'cam{CAMERA_IDX}.npz'
-TIME_SCALAR:float = 2
+COMPUTE_SCALAR:float = 2
 
 # Set up the termination criteria
-criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 50, 0.00033)
 
 # Prepare object points according to:
 # https://docs.opencv.org/4.5.1/dc/dbb/tutorial_py_calibration.html
@@ -41,8 +41,8 @@ frames = []
 while capret and capture.isOpened():
     # Flatten
     grey = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
-    size = tuple([int(dim/TIME_SCALAR) for dim in grey.shape])
-    grey = cv.resize(grey, size, cv.INTER_AREA)
+    size = tuple([int(dim/COMPUTE_SCALAR) for dim in grey.shape])
+    grey = cv.resize(grey, size, cv.INTER_LINEAR_EXACT)
     if PRINT_RESULTS: print(f'Captured frame {len(frames)} and converted to grey...')
     frames.append(grey)
     
@@ -57,7 +57,7 @@ capture.release()
 if PRINT_RESULTS: print('Capture released for analysis.')
 
 for idx, frame in enumerate(frames):
-    cornret, corners = cv.findChessboardCorners(frame, BOARD_SIZE, None, cv.CALIB_CB_ADAPTIVE_THRESH)
+    cornret, corners = cv.findChessboardCorners(frame, BOARD_SIZE, None, cv.CALIB_CB_ADAPTIVE_THRESH + cv.CALIB_CB_FILTER_QUADS + cv.CALIB_CB_FAST_CHECK + cv.CALIB_CB_NORMALIZE_IMAGE + cv.CALIB_CB_ACCURACY)
     if PRINT_RESULTS: print(f'Corner computation {idx} completed...')
     
     # Find the sub-pixel coordinates of the corners in the frames
@@ -78,10 +78,10 @@ calibret, calibMat, distCoeff, rvecs, tvecs = cv.calibrateCamera(resobj, resimg,
 imgHeight, imgWidth = grey.shape[:2]
 optimalCalibMat, roi = cv.getOptimalNewCameraMatrix(calibMat, distCoeff, (imgWidth,imgHeight), alpha=1, newImgSize=(imgWidth,imgHeight))
 
-calibMat = TIME_SCALAR * calibMat; calibMat[2,2] = 1.
-optimalCalibMat = TIME_SCALAR * optimalCalibMat; optimalCalibMat[2,2] = 1.
-roi = TIME_SCALAR * roi
-size = TIME_SCALAR * np.array([imgWidth, imgHeight], dtype=np.uint32)
+calibMat = COMPUTE_SCALAR * calibMat; calibMat[2,2] = 1.
+optimalCalibMat = COMPUTE_SCALAR * optimalCalibMat; optimalCalibMat[2,2] = 1.
+roi = np.array([COMPUTE_SCALAR * n for n in roi])
+size = COMPUTE_SCALAR * np.array([imgWidth, imgHeight], dtype=np.uint32)
 
 if PRINT_RESULTS:
     print(f'Calibration matrix:\t{calibMat}')
