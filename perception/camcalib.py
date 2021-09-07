@@ -12,11 +12,10 @@ CHESSBOARD_WIDTH:int = 9
 CHESSBOARD_HEIGHT:int = 6
 BOARD_SIZE:tuple() = (CHESSBOARD_HEIGHT,CHESSBOARD_WIDTH)
 CAMERA_SECOND:int = 21
-GOOD_FRAMES:int = CAMERA_SECOND*2
-CAP_FRAMES:int = CAMERA_SECOND*10
+CAP_FRAMES:int = CAMERA_SECOND*6
 PRINT_RESULTS:bool = True
 CALIB_FNAME:str = f'cam{CAMERA_IDX}.npz'
-COMPUTE_SCALAR:float = 2
+DIM_SCALAR:float = 0.5
 
 # Set up the termination criteria
 criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 50, 1e-6)
@@ -41,7 +40,7 @@ frames = []
 while capret and capture.isOpened():
     # Flatten
     grey = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
-    size = tuple([int(dim/COMPUTE_SCALAR) for dim in grey.shape])
+    size = tuple([int(dim*DIM_SCALAR) for dim in grey.shape])
     grey = cv.resize(grey, size, cv.INTER_LINEAR_EXACT)
     if PRINT_RESULTS: print(f'Captured frame {len(frames)} and converted to grey...')
     frames.append(grey)
@@ -57,7 +56,7 @@ capture.release()
 if PRINT_RESULTS: print('Capture released for analysis.')
 
 for idx, frame in enumerate(frames):
-    cornret, corners = cv.findChessboardCorners(frame, BOARD_SIZE, None, cv.CALIB_CB_ADAPTIVE_THRESH + cv.CALIB_CB_EXHAUSTIVE + cv.CALIB_CB_ACCURACY)
+    cornret, corners = cv.findChessboardCorners(frame, BOARD_SIZE, None, cv.CALIB_CB_ADAPTIVE_THRESH + cv.CALIB_CB_FAST_CHECK + cv.CALIB_CB_FILTER_QUADS + cv.CALIB_CB_ACCURACY)
     if PRINT_RESULTS: print(f'Corner computation {idx} completed...')
     
     # Find the sub-pixel coordinates of the corners in the frames
@@ -67,41 +66,19 @@ for idx, frame in enumerate(frames):
 
         # The tuples here are basically magic to me right now:
         # https://docs.opencv.org/4.5.1/dc/dbb/tutorial_py_calibration.html
-        subcorn = cv.cornerSubPix(grey, corners, (5,5), (-1,-1), criteria)
+        subcorn = cv.cornerSubPix(grey, corners, (3,3), (-1,-1), criteria)
         resimg.append(subcorn)
-    
-    # Break early
-    if len(resimg) >= GOOD_FRAMES:
-        break
 
-K = np.zeros((3,3), dtype=np.float64)
-D = np.zeros((4,1), dtype=np.float64)
-calibret, calibMat, distCoeff, rvecs, tvecs = cv.fisheye.calibrate(resobj, resimg, (grey.shape[::-1]), K, D, flags=(cv.CALIB_RATIONAL_MODEL+cv.CALIB_FIX_ASPECT_RATIO), criteria=criteria)
+K = np.zeros((3,3), dtype=np.float32)
+D = np.zeros((4,1), dtype=np.float32)
+rms, _, _, _, _ = cv.fisheye.calibrate(resobj, resimg, (grey.shape[::-1]), K, D, \
+    flags=(cv.fisheye.CALIB_RECOMPUTE_EXTRINSIC+cv.fisheye.CALIB_CHECK_COND+cv.fisheye.CALIB_FIX_SKEW))
 imgHeight, imgWidth = grey.shape[:2]
-optimalCalibMat, roi = cv.getOptimalNewCameraMatrix(calibMat, distCoeff, (imgWidth,imgHeight), alpha=1, newImgSize=(imgWidth,imgHeight))
-
-K = COMPUTE_SCALAR * K; K[2,2] = 1.
-calibMat = COMPUTE_SCALAR * calibMat; calibMat[2,2] = 1.
-optimalCalibMat = COMPUTE_SCALAR * optimalCalibMat; optimalCalibMat[2,2] = 1.
-roi = np.array([COMPUTE_SCALAR * n for n in roi])
-size = COMPUTE_SCALAR * np.array([imgWidth, imgHeight], dtype=np.uint32)
 
 if PRINT_RESULTS:
-    print(f'Calibration matrix:\t{calibMat}')
-    print(f'Distortion coeff\'s:\t{distCoeff}')
-    print(f'Optimal calibration matrix:\t{optimalCalibMat}')
-    print(f'ROI matrix for crop:\t{roi}')
     print(f'K: \t{K}')
     print(f'D: \t{D}')
+    print(f'RMS: \t{rms}')
 
-    meanErr = 0
-    for idx in range(len(resobj)):
-        errPoints, _ = cv.projectPoints(resobj[idx], rvecs[idx], tvecs[idx], calibMat, distCoeff)
-        error = cv.norm(resimg[idx], errPoints, cv.NORM_L2)/len(errPoints)
-        meanErr += error
-    
-    print(f'Total error:\t {meanErr/len(oPoints)}')
-
-np.savez(CALIB_FNAME, calib=calibMat, dist=distCoeff, calibOpt=optimalCalibMat, 
-    roi=roi, size=size, K=K, D=D)
+np.savez(CALIB_FNAME, K=K, D=D, width=imgWidth, height=imgHeight, rms=rms)
 print(f'Saved to \"{CALIB_FNAME}\"')
