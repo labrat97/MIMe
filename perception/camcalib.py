@@ -19,12 +19,12 @@ CALIB_FNAME:str = f'cam{CAMERA_IDX}.npz'
 COMPUTE_SCALAR:float = 2
 
 # Set up the termination criteria
-criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 100, 0.0001)
+criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 50, 1e-6)
 
 # Prepare object points according to:
 # https://docs.opencv.org/4.5.1/dc/dbb/tutorial_py_calibration.html
-oPoints = np.zeros((CHESSBOARD_HEIGHT*CHESSBOARD_WIDTH, 3), np.float32)
-oPoints[:, :2] = np.mgrid[0:CHESSBOARD_HEIGHT, 0:CHESSBOARD_WIDTH].T.reshape(-1, 2)
+oPoints = np.zeros((1, CHESSBOARD_HEIGHT*CHESSBOARD_WIDTH, 3), np.float32)
+oPoints[0,:,:2] = np.mgrid[0:CHESSBOARD_HEIGHT, 0:CHESSBOARD_WIDTH].T.reshape(-1, 2)
 
 # Arrays to store the resulting points
 resobj = [] # World-space, 3D space
@@ -63,7 +63,7 @@ for idx, frame in enumerate(frames):
     # Find the sub-pixel coordinates of the corners in the frames
     if cornret:
         resobj.append(oPoints)
-        if PRINT_RESULTS: print(f'{len(oPoints)} corners found...')
+        if PRINT_RESULTS: print(f'{oPoints.shape[1]} corners found...')
 
         # The tuples here are basically magic to me right now:
         # https://docs.opencv.org/4.5.1/dc/dbb/tutorial_py_calibration.html
@@ -74,10 +74,13 @@ for idx, frame in enumerate(frames):
     if len(resimg) >= GOOD_FRAMES:
         break
 
-calibret, calibMat, distCoeff, rvecs, tvecs = cv.calibrateCamera(resobj, resimg, (grey.shape[::-1]), None, None, flags=(cv.CALIB_RATIONAL_MODEL+cv.CALIB_FIX_ASPECT_RATIO))
+K = np.zeros((3,3), dtype=np.float64)
+D = np.zeros((4,1), dtype=np.float64)
+calibret, calibMat, distCoeff, rvecs, tvecs = cv.fisheye.calibrate(resobj, resimg, (grey.shape[::-1]), K, D, flags=(cv.CALIB_RATIONAL_MODEL+cv.CALIB_FIX_ASPECT_RATIO), criteria=criteria)
 imgHeight, imgWidth = grey.shape[:2]
 optimalCalibMat, roi = cv.getOptimalNewCameraMatrix(calibMat, distCoeff, (imgWidth,imgHeight), alpha=1, newImgSize=(imgWidth,imgHeight))
 
+K = COMPUTE_SCALAR * K; K[2,2] = 1.
 calibMat = COMPUTE_SCALAR * calibMat; calibMat[2,2] = 1.
 optimalCalibMat = COMPUTE_SCALAR * optimalCalibMat; optimalCalibMat[2,2] = 1.
 roi = np.array([COMPUTE_SCALAR * n for n in roi])
@@ -88,6 +91,8 @@ if PRINT_RESULTS:
     print(f'Distortion coeff\'s:\t{distCoeff}')
     print(f'Optimal calibration matrix:\t{optimalCalibMat}')
     print(f'ROI matrix for crop:\t{roi}')
+    print(f'K: \t{K}')
+    print(f'D: \t{D}')
 
     meanErr = 0
     for idx in range(len(resobj)):
@@ -97,5 +102,6 @@ if PRINT_RESULTS:
     
     print(f'Total error:\t {meanErr/len(oPoints)}')
 
-np.savez(CALIB_FNAME, calib=calibMat, dist=distCoeff, calibOpt=optimalCalibMat, roi=roi, size=size)
+np.savez(CALIB_FNAME, calib=calibMat, dist=distCoeff, calibOpt=optimalCalibMat, 
+    roi=roi, size=size, K=K, D=D)
 print(f'Saved to \"{CALIB_FNAME}\"')
