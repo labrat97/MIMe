@@ -9,7 +9,7 @@ CALIB_FNAME:str = f'cam{CAMERA_IDX}.npz'
 
 if len(sys.argv) > 1:
     IN_FNAME = sys.argv[1]
-    print(f'Selected camera corner capture located at: \"{CALIB_FNAME}\"')
+    print(f'Selected camera corner capture located at: \"{IN_FNAME}\"')
 if len(sys.argv) > 2:
     CALIB_FNAME = sys.argv[2]
     print(f'Outfile set to: \"{CALIB_FNAME}\"')
