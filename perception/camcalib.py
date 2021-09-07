@@ -16,15 +16,15 @@ if len(sys.argv) > 2:
 params = np.load(IN_FNAME)
 print(f'Loaded input corners...')
 
-K = np.zeros((3,3), dtype=np.float32)
-D = np.zeros((4,1), dtype=np.float32)
-rms, _, _, _, _ = cv.fisheye.calibrate(params.objPoints, params.imgPoints, (params.width, params.height), K, D, \
-    flags=(cv.fisheye.CALIB_RECOMPUTE_EXTRINSIC+cv.fisheye.CALIB_CHECK_COND+cv.fisheye.CALIB_FIX_SKEW))
+K = np.zeros((3,3), dtype=np.float64)
+D = np.zeros((4,1), dtype=np.float64)
+rms, _, _, _, _ = cv.fisheye.calibrate(params['objPoints'], params['imgPoints'], (params['width'], params['height']), K, D, \
+    flags=(cv.fisheye.CALIB_RECOMPUTE_EXTRINSIC))
 
 if PRINT_RESULTS:
     print(f'K: \t{K}')
     print(f'D: \t{D}')
     print(f'RMS: \t{rms}')
 
-np.savez(CALIB_FNAME, K=K, D=D, width=params.width, height=params.height, rms=rms)
+np.savez(CALIB_FNAME, K=K, D=D, width=params['width'], height=params['height'], rms=rms)
 print(f'Saved to \"{CALIB_FNAME}\"')

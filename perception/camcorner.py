@@ -18,11 +18,11 @@ CALIB_FNAME:str = f'calibcorners{CAMERA_IDX}.npz'
 DIM_SCALAR:float = 0.5
 
 # Set up the termination criteria
-criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 50, 1e-6)
+criteria = (cv.TERM_CRITERIA_EPS + cv.TERM_CRITERIA_MAX_ITER, 100, 1e-6)
 
 # Prepare object points according to:
 # https://docs.opencv.org/4.5.1/dc/dbb/tutorial_py_calibration.html
-oPoints = np.zeros((1, CHESSBOARD_HEIGHT*CHESSBOARD_WIDTH, 3), np.float32)
+oPoints = np.zeros((1,CHESSBOARD_HEIGHT*CHESSBOARD_WIDTH, 3), np.float64)
 oPoints[0,:,:2] = np.mgrid[0:CHESSBOARD_HEIGHT, 0:CHESSBOARD_WIDTH].T.reshape(-1, 2)
 
 # Arrays to store the resulting points
@@ -66,8 +66,8 @@ for idx, frame in enumerate(frames):
 
         # The tuples here are basically magic to me right now:
         # https://docs.opencv.org/4.5.1/dc/dbb/tutorial_py_calibration.html
-        subcorn = cv.cornerSubPix(grey, corners, (3,3), (-1,-1), criteria)
-        resimg.append(subcorn)
+        subcorn = cv.cornerSubPix(grey, corners, (11,11), (-1,-1), criteria)
+        resimg.append(np.float64(subcorn))
 
 np.savez(CALIB_FNAME, imgPoints=resimg, objPoints=resobj, width=grey.shape[1], height=grey.shape[0])
 print(f'Corners saved to: \"{CALIB_FNAME}\"')
