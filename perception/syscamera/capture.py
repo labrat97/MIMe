@@ -28,11 +28,10 @@ class Retina(cv.VideoCapture):
         self.calibScalar = width/self.calib['width']
         self.__K = self.calib['K'] * self.calibScalar; self.__K[2,2] = 1.
 
-        # Cache harder computations for later
+        # Do hard computations away from runtime
         self.__fullBalance = fullBalance
-        DIM = (self.calib['width'], self.calib['height'])
-        self.__dimNorm = DIM
-        self.__dimOpt = DIM
+        self.__dimNorm = np.array([np.max([self.calib['width'], self.calib['height']]) for _ in range(2)], dtype=np.uint32)
+        self.__dimOpt = np.array([np.min([self.calib['width'], self.calib['height']]) for _ in range(2)], dtype=np.uint32)
         self.__computeMaps()
 
     def __computeMaps(self):
@@ -49,7 +48,7 @@ class Retina(cv.VideoCapture):
         self.__map0opt, self.__map1opt = cv.fisheye.initUndistortRectifyMap(self.__K, self.calib['D'], \
             np.eye(3), self.__newKopt, self.__dimOpt, cv.CV_16SC2)
 
-    def read(self, undist:bool=True, undistOptimal:bool=False, undistBoth:bool=False):
+    def read(self, undist:bool=True, undistOptimal:bool=True, undistBoth:bool=False):
         # Read from camera
         ret, rawframe = super(Retina, self).read()
         if not ret: return ret, rawframe
@@ -77,13 +76,3 @@ class Retina(cv.VideoCapture):
             interpolation=cv.INTER_LINEAR, borderMode=cv.BORDER_CONSTANT)
 
         return ret, frameOpt, frameNorm
-
-class RetinalEmbedder():
-    def __init__(self, retina:Retina, outputSize:tuple, peripheralSize:tuple=None):
-        assert len(outputSize) == 2
-        assert len(peripheralSize) == 2
-
-        self.retina = retina
-        self.outputSize = outputSize
-        self.peripheralSize = peripheralSize
-
