@@ -12,6 +12,7 @@ class Retina(cv.VideoCapture):
         super(Retina, self).__init__(
             config.configurationString(camID=id, width=width, height=height, fps=fps),
             cv.CAP_GSTREAMER)
+        self.camID = str(id)
         
         # Assert that the settings were successfully applied
         assert round(self.get(cv.CAP_PROP_FRAME_WIDTH)) == width

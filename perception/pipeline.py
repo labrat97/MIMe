@@ -2,14 +2,11 @@ import torch
 
 
 class PipelineChunk(object):
-    def __init__(self, name:str, f_x:function):
+    def __init__(self, name:str):
         super(PipelineChunk, self).__init__()
 
         # Make this chunk searchable in a list
         self.name = name
-
-        # Hold the functionality
-        self.f_x = f_x
 
         # Hold the result of the computation for later pipelining
         self.result = None
@@ -18,8 +15,8 @@ class PipelineChunk(object):
         return self.result
 
     def compute(self, x):
-        self.result = self.f_x(x)
-        return self.result
+        self.result = x
+        return x
 
 def __quickToCuda(x):
     if isinstance(x, torch.Tensor):
@@ -29,10 +26,12 @@ def __quickToCuda(x):
 
 import vpiinterop
 class DenseFlowPipe(PipelineChunk):
-    def __init__(self, f_x:function):
-        super(DenseFlowPipe, self).__init__("DenseFlow", f_x)
+    def __init__(self):
+        super(DenseFlowPipe, self).__init__("DenseFlow")
 
     def compute(self, x, quality:str='high', format:str='bgr'):
+        super(DenseFlowPipe, self).compute(x)
+
         # Force 'x' into GPU/Torch memory
         inter = __quickToCuda(x)
         if len(inter.shape) == 5:
@@ -42,9 +41,12 @@ class DenseFlowPipe(PipelineChunk):
             interCurr = inter[0,:,:,:].unsqueeze(0)
             interPrev = inter[1,:,:,:].unsqueeze(0)
 
-        return self.__compute(interCurr, interPrev, quality=quality, format=format)
+        self.result = self.__compute(interCurr, interPrev, quality=quality, format=format)
+        return self.result
 
     def compute(self, x, y, quality:str='high', format:str='bgr'):
+        super(DenseFlowPipe, self).compute(x)
+        
         # Force 'x' and 'y' into GPU/Torch memory
         interCurr = __quickToCuda(x)
         interPrev = __quickToCuda(y)
@@ -53,11 +55,38 @@ class DenseFlowPipe(PipelineChunk):
         if len(interPrev.shape) == 3:
             interPrev.unsqueeze_(0)
 
-        return self.__compute(interCurr, interPrev, quality=quality, format=format)
+        self.result = self.__compute(interCurr, interPrev, quality=quality, format=format)
+        return self.result
 
     def __compute(self, curr:torch.Tensor, prev:torch.Tensor, quality:str, format:str) -> torch.Tensor:
         return vpiinterop.denseFlow(prev, curr, format=format, quality=quality)
 
 import fastdepth
-import syscamera
+class FastDepthPipe(PipelineChunk):
+    def __init__(self):
+        super(FastDepthPipe, self).__init__("FastDepth")
+    
+    def compute(self, x):
+        # TODO: This
+        return super(FastDepthPipe, self).compute(x)
 
+
+import time
+import syscamera
+class RetinaPipe(PipelineChunk):
+    def __init__(self, retina:syscamera.Retina):
+        super(RetinaPipe, self).__init__(f'RetinaPipe-{retina.camID}')
+        
+        # Save retina for later use
+        self.retina = retina
+    
+    def compute(self, x, undistOptimal:bool=True, undistBoth:bool=True):
+        super(RetinaPipe, self).compute(x)
+
+        # TODO: I don't know if a tuple like packing can handle appending like this
+        self.result = self.retina.read(undist=True, undistOptimal=undistOptimal, \
+            undistBoth=undistBoth)
+        if x is not None:
+            self.result.append(time.time() - x)
+
+        return self.result
