@@ -61,14 +61,21 @@ class DenseFlowPipe(PipelineChunk):
     def __compute(self, curr:torch.Tensor, prev:torch.Tensor, quality:str, format:str) -> torch.Tensor:
         return vpiinterop.denseFlow(prev, curr, format=format, quality=quality)
 
+
 import fastdepth
 class FastDepthPipe(PipelineChunk):
-    def __init__(self):
+    def __init__(self, useDLA:int=None):
         super(FastDepthPipe, self).__init__("FastDepth")
+
+        # Only using a batch size of 1 for now due to forseeable image overhead
+        # being negligable
+        self.depthEngine = fastdepth.DepthEngine(batchSize=1, useDLA=useDLA)
     
     def compute(self, x):
-        # TODO: This
-        return super(FastDepthPipe, self).compute(x)
+        return self.depthEngine.pred(x)
+    
+    def compute(self, x:torch.Tensor, y:torch.Tensor):
+        return self.depthEngine.pred(x, y)
 
 
 import time
