@@ -4,10 +4,8 @@ DIRNAME = dirname(__file__)
 MODEL_NAME_BASE = 'fastdepth'
 MODEL_NAME_SUFFIX = '.onnx'
 
-import pycuda.autoinit
-import pycuda.driver as cuda
-
 import tensorrt as trt
+import torch
 TRT_LOGGER = trt.Logger(trt.Logger.WARNING)
 EXPLICIT_BATCH = 1 << (int)(trt.NetworkDefinitionCreationFlag.EXPLICIT_BATCH)
 
@@ -37,21 +35,6 @@ def buildEngine(defaultBatch:int = 2, modelPath:str = None):
     
     # Build into a returned engine
     return builder.build_engine(network, config)
-
-def createBindings(engine):
-    bindings = []
-
-    for binding in engine:
-        size = trt.volume(engine.get_binding_shape(binding)) * engine.max_batch_size
-        dtype = trt.nptype(engine.get_binding_dtype(binding))
-
-        # Using managed allocation enables unified memory according to:
-        # https://developer.nvidia.com/blog/unified-memory-cuda-beginners/
-        bindmem = cuda.managed_empty(size, dtype)
-
-        bindings.append(int(bindmem))
-    
-    return bindings
 
 def getTorchStream():
     import torch
